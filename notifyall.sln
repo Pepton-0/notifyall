@@ -9,9 +9,13 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib", "lib\lib.vcxproj", "{
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test", "test\test.vcxproj", "{CDB15F3D-A100-4426-8B64-42070C73ED5E}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "exp", "exp\exp.vcxproj", "{36670DA0-2ED9-4A42-A9AA-FD301BD33BB6}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "doc", "doc", "{DDB4EF12-CC4E-5E88-E6FC-71A802F4DE97}"
 	ProjectSection(SolutionItems) = preProject
-		todo.md = todo.md
+		doc\diagram.html = doc\diagram.html
+		doc\done.md = doc\done.md
+		doc\todo.md = doc\todo.md
 	EndProjectSection
 EndProject
 Global
@@ -46,6 +50,14 @@ Global
 		{CDB15F3D-A100-4426-8B64-42070C73ED5E}.Release|x64.Build.0 = Release|x64
 		{CDB15F3D-A100-4426-8B64-42070C73ED5E}.Release|x86.ActiveCfg = Release|Win32
 		{CDB15F3D-A100-4426-8B64-42070C73ED5E}.Release|x86.Build.0 = Release|Win32
+		{36670DA0-2ED9-4A42-A9AA-FD301BD33BB6}.Debug|x64.ActiveCfg = Debug|x64
+		{36670DA0-2ED9-4A42-A9AA-FD301BD33BB6}.Debug|x64.Build.0 = Debug|x64
+		{36670DA0-2ED9-4A42-A9AA-FD301BD33BB6}.Debug|x86.ActiveCfg = Debug|Win32
+		{36670DA0-2ED9-4A42-A9AA-FD301BD33BB6}.Debug|x86.Build.0 = Debug|Win32
+		{36670DA0-2ED9-4A42-A9AA-FD301BD33BB6}.Release|x64.ActiveCfg = Release|x64
+		{36670DA0-2ED9-4A42-A9AA-FD301BD33BB6}.Release|x64.Build.0 = Release|x64
+		{36670DA0-2ED9-4A42-A9AA-FD301BD33BB6}.Release|x86.ActiveCfg = Release|Win32
+		{36670DA0-2ED9-4A42-A9AA-FD301BD33BB6}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

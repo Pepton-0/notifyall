@@ -1,0 +1,4 @@
+# Base language. Every key must exist here.
+tray.title=notifyall
+menu.toggle=Show/Hide
+menu.exit=Exit

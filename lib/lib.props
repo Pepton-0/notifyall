@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Consumers add a ProjectReference to lib.vcxproj (link) and import this file (include paths, flags). -->
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup Label="UserMacros">
+    <NotifyallLibDir Condition="'$(NotifyallLibDir)' == ''">$(MSBuildThisFileDirectory)</NotifyallLibDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(NotifyallLibDir);$(NotifyallLibDir)third_party;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- NOMINMAX: windows.h min/max macros break std::max. -->
+      <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+</Project>

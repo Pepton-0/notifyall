@@ -1,0 +1,4 @@
+# Japanese. Missing keys fall back to en.lang.
+tray.title=notifyall
+menu.toggle=表示/非表示
+menu.exit=終了

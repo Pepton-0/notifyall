@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# notifyall: 個人的なメモ (todo / done / 図) は含めない
+doc/
+todo.md
