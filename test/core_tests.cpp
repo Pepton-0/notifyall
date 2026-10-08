@@ -3,10 +3,12 @@
 #include <chrono>
 #include <functional>
 #include <map>
+#include <set>
 #include <vector>
 
 #include "composition.h"
 #include "framework.h"
+#include "occlusion.h"
 
 namespace {
 
@@ -110,12 +112,20 @@ namespace {
 			last = badges;
 			shown_ = true;
 		}
+		void show_groups(HWND owner, const RECT& area, const std::vector<badge_group>& groups) override
+		{
+			last_owner = owner;
+			last_area = area;
+			last_groups = groups;
+			shown_ = true;
+		}
 		void hide() override { shown_ = false; }
 		bool shown() const override { return shown_; }
 
 		HWND last_owner = nullptr;
 		RECT last_area{};
 		std::vector<badge> last;
+		std::vector<badge_group> last_groups;
 
 	private:
 		bool shown_ = false;
@@ -141,6 +151,74 @@ namespace {
 		s.items = {
 			{ L"SystemTray.NormalButton#0", { 2145, 1528, 2193, 1600 } },
 			{ L"SystemTray.OmniButton#0", { 2433, 1528, 2536, 1600 }, true },   // the clock
+		};
+		return s;
+	}
+
+	// Window icons kept in a map; "shown" falls back to a real icon so badges can be drawn.
+	class fake_window_icons final : public i_window_icons {
+	public:
+		fake_window_icons() : fallback(CopyIcon(LoadIconW(nullptr, IDI_APPLICATION))) {}
+		~fake_window_icons() override { DestroyIcon(fallback); }
+
+		std::vector<HWND> windows() override { return open; }
+		bool elevated(HWND w) override { return admin.contains(w); }
+		HICON get(HWND w, icon_kind k) override { return current[{ w, k }]; }
+		HICON shown(HWND w, icon_kind k) override { const HICON i = get(w, k); return i ? i : fallback; }
+		bool set(HWND w, icon_kind k, HICON i) override { current[{ w, k }] = i; ++sets; return true; }
+		int size(HWND, icon_kind k) override { return k == icon_kind::big ? 32 : 16; }
+
+		std::vector<HWND> open;
+		std::set<HWND> admin;
+		std::map<std::pair<HWND, icon_kind>, HICON> current;
+		HICON fallback;
+		int sets = 0;
+	};
+
+	class fake_window_items final : public i_window_items {
+	public:
+		std::vector<HWND> candidates() override { return order; }
+		std::optional<window_snapshot> query(HWND w) override
+		{
+			queried.push_back(w);
+			if (delay.count() > 0) Sleep(static_cast<DWORD>(delay.count()));
+			const auto it = snaps.find(w);
+			if (it == snaps.end()) return std::nullopt;
+			return it->second;
+		}
+		void disconnect() override { ++disconnects; }
+
+		std::vector<HWND> order;
+		std::map<HWND, window_snapshot> snaps;
+		std::vector<HWND> queried;
+		std::chrono::milliseconds delay{ 0 };   // pretend each query costs this long
+		int disconnects = 0;
+	};
+
+	class fake_window_changes final : public i_window_changes {
+	public:
+		void start(std::function<void(HWND)> fn) override { changed = std::move(fn); }
+		void stop() override { changed = nullptr; }
+		std::function<void(HWND)> changed;
+	};
+
+	class fake_window_stack final : public i_window_stack {
+	public:
+		std::vector<stacked_window> front_to_back() override { return windows; }
+		RECT screen() override { return { 0, 0, 2560, 1600 }; }
+		std::vector<stacked_window> windows;
+	};
+
+	// One window at (100,100) with a close button and a details-view row.
+	window_snapshot explorer_like(HWND w)
+	{
+		window_snapshot s;
+		s.window = w;
+		s.frame = { 100, 100, 1300, 900 };
+		s.dpi = 144;
+		s.items = {
+			{ L"1.2.3", { 1200, 100, 1269, 145 } },
+			{ L"1.2.4", { 400, 300, 1250, 330 } },
 		};
 		return s;
 	}
@@ -369,6 +447,351 @@ test::suite tray_area_injection_suite()
 			inj.off();
 			CHECK(t, !layer->shown());
 			CHECK(t, items.disconnects == 1);   // the worker released its COM objects
+		} },
+	} };
+}
+
+test::suite window_icon_injection_suite()
+{
+	return { "window_icon_injection", {
+		{ "with_badge_keeps_size", [](test::context& t) {
+			const HICON source = CopyIcon(LoadIconW(nullptr, IDI_APPLICATION));
+			const HICON badged = window_icon_injection::with_badge(source, 24, 3);
+			CHECK(t, badged != nullptr);
+
+			ICONINFO info{};
+			BITMAP bm{};
+			GetIconInfo(badged, &info);
+			GetObjectW(info.hbmColor, sizeof(bm), &bm);
+			CHECK(t, bm.bmWidth == 24 && bm.bmHeight == 24);
+			CHECK(t, info.fIcon);
+
+			DeleteObject(info.hbmColor);
+			DeleteObject(info.hbmMask);
+			DestroyIcon(badged);
+			DestroyIcon(source);
+		} },
+		{ "badges_both_sizes_and_restores_originals", [](test::context& t) {
+			fake_window_icons icons;
+			const HWND a = fake_hwnd(1), b = fake_hwnd(2);
+			icons.open = { a, b };
+			const HICON own = CopyIcon(LoadIconW(nullptr, IDI_INFORMATION));
+			icons.current[{ a, icon_kind::big }] = own;   // a has its own big icon; everything else uses the class icon
+
+			window_icon_injection inj(icons);
+			inj.refresh();
+			CHECK(t, inj.badged() == 2);
+			CHECK(t, icons.get(a, icon_kind::big) != own);
+			CHECK(t, icons.get(a, icon_kind::little) != nullptr);
+			CHECK(t, icons.get(b, icon_kind::big) != nullptr);
+
+			inj.off();
+			CHECK(t, icons.get(a, icon_kind::big) == own);
+			CHECK(t, icons.get(a, icon_kind::little) == nullptr);   // back to "use the class icon"
+			CHECK(t, icons.get(b, icon_kind::big) == nullptr);
+			CHECK(t, inj.badged() == 0);
+			DestroyIcon(own);
+		} },
+		{ "skips_elevated_windows", [](test::context& t) {
+			fake_window_icons icons;
+			const HWND user = fake_hwnd(1), admin = fake_hwnd(2);
+			icons.open = { user, admin };
+			icons.admin = { admin };
+
+			window_icon_injection inj(icons);
+			inj.refresh();
+			CHECK(t, inj.badged() == 1);
+			CHECK(t, icons.get(admin, icon_kind::big) == nullptr);
+			inj.off();
+		} },
+		{ "leaves_badged_windows_alone", [](test::context& t) {
+			fake_window_icons icons;
+			icons.open = { fake_hwnd(1) };
+
+			window_icon_injection inj(icons);
+			inj.refresh();
+			const int sets = icons.sets;
+			inj.refresh();
+			CHECK(t, icons.sets == sets);
+			inj.off();
+		} },
+		{ "rebadges_an_icon_the_app_replaced", [](test::context& t) {
+			fake_window_icons icons;
+			const HWND w = fake_hwnd(1);
+			icons.open = { w };
+
+			window_icon_injection inj(icons);
+			inj.refresh();
+
+			const HICON tab = CopyIcon(LoadIconW(nullptr, IDI_WARNING));   // e.g. a browser switching tabs
+			icons.current[{ w, icon_kind::big }] = tab;
+			inj.refresh();
+			CHECK(t, icons.get(w, icon_kind::big) != tab);   // badged again
+
+			inj.off();
+			CHECK(t, icons.get(w, icon_kind::big) == tab);   // and the app's latest icon comes back
+			DestroyIcon(tab);
+		} },
+		{ "keeps_an_icon_the_app_set_after_off_began", [](test::context& t) {
+			fake_window_icons icons;
+			const HWND w = fake_hwnd(1);
+			icons.open = { w };
+
+			window_icon_injection inj(icons);
+			inj.refresh();
+			const HICON fresh = CopyIcon(LoadIconW(nullptr, IDI_WARNING));
+			icons.current[{ w, icon_kind::big }] = fresh;   // the app changed it and we haven't refreshed yet
+			inj.off();
+			CHECK(t, icons.get(w, icon_kind::big) == fresh);
+			DestroyIcon(fresh);
+		} },
+		{ "forgets_closed_windows", [](test::context& t) {
+			fake_window_icons icons;
+			icons.open = { fake_hwnd(1), fake_hwnd(2) };
+
+			window_icon_injection inj(icons);
+			inj.refresh();
+			icons.open = { fake_hwnd(2) };
+			inj.refresh();
+			CHECK(t, inj.badged() == 1);
+			inj.off();
+		} },
+	} };
+}
+
+test::suite occlusion_suite()
+{
+	return { "occlusion", {
+		{ "subtract_disjoint_keeps_all", [](test::context& t) {
+			const auto r = occlusion::subtract({ 0, 0, 10, 10 }, { 20, 20, 30, 30 });
+			const RECT whole{ 0, 0, 10, 10 };
+			CHECK(t, r.size() == 1 && EqualRect(&r[0], &whole));
+		} },
+		{ "subtract_middle_leaves_a_frame", [](test::context& t) {
+			const auto r = occlusion::subtract({ 0, 0, 30, 30 }, { 10, 10, 20, 20 });
+			CHECK(t, r.size() == 4);
+			long area = 0;
+			for (const RECT& p : r) area += (p.right - p.left) * (p.bottom - p.top);
+			CHECK(t, area == 900 - 100);
+		} },
+		{ "subtract_everything_leaves_nothing", [](test::context& t) {
+			CHECK(t, occlusion::subtract({ 10, 10, 20, 20 }, { 0, 0, 30, 30 }).empty());
+		} },
+		{ "front_window_covers_the_one_behind", [](test::context& t) {
+			const HWND front = fake_hwnd(1), back = fake_hwnd(2), hidden = fake_hwnd(3);
+			const auto parts = occlusion::visible_parts({
+				{ front, { 0, 0, 100, 100 }, true },
+				{ back, { 50, 0, 150, 100 }, true },
+				{ hidden, { 10, 10, 90, 90 }, true },
+			});
+			CHECK(t, parts.at(front).size() == 1);
+			CHECK(t, parts.at(back).size() == 1 && parts.at(back)[0].left == 100);
+			CHECK(t, !parts.contains(hidden));
+		} },
+		{ "see_through_windows_cover_nothing", [](test::context& t) {
+			const HWND glass = fake_hwnd(1), app = fake_hwnd(2);
+			const auto parts = occlusion::visible_parts({
+				{ glass, { 0, 0, 2560, 1600 }, false },
+				{ app, { 100, 100, 200, 200 }, true },
+			});
+			const RECT frame{ 100, 100, 200, 200 };
+			CHECK(t, parts.contains(app) && EqualRect(&parts.at(app)[0], &frame));
+		} },
+	} };
+}
+
+test::suite window_item_injection_suite()
+{
+	// Builds the injection over fakes; the overlay is watched through layer.
+	struct rig {
+		fake_window_items items;
+		fake_window_stack stack;
+		fake_window_changes changes;
+		fake_overlay* layer = nullptr;
+		std::unique_ptr<window_item_injection> inj;
+
+		rig()
+		{
+			auto [owned, seen] = fake_overlay::make();
+			layer = seen;
+			inj = std::make_unique<window_item_injection>(items, stack, changes, std::move(owned));
+		}
+	};
+
+	return { "window_item_injection", {
+		{ "compact_items_get_the_top_right", [](test::context& t) {
+			const RECT button{ 1200, 100, 1269, 145 };
+			const badge b = window_item_injection::place(button, 144, 1);
+			CHECK(t, b.x > (button.left + button.right) / 2.0f && b.x + b.diameter / 2 <= button.right);
+			CHECK(t, b.y - b.diameter / 2 >= button.top);
+		} },
+		{ "rows_get_it_near_their_icon", [](test::context& t) {
+			const RECT row{ 400, 300, 1250, 330 };
+			const badge b = window_item_injection::place(row, 144, 1);
+			CHECK(t, b.x < row.left + 80);
+			CHECK(t, b.x - b.diameter / 2 >= row.left);
+		} },
+		{ "anchors_follow_the_nearer_edges", [](test::context& t) {
+			const badge close{ 1160, 20, 20, 1 };   // near the top-right of a 1200x800 window
+			const auto a = window_item_injection::anchor(close, { 1200, 800 });
+			CHECK(t, a.from_right && !a.from_bottom);
+
+			const RECT maximized{ 0, 0, 2560, 1528 };
+			const badge b = window_item_injection::resolve(a, maximized);
+			CHECK(t, std::abs(b.x - (2560 - 40)) < 0.01f && std::abs(b.y - 20) < 0.01f);
+		} },
+		{ "queries_only_changed_or_overdue_windows", [](test::context& t) {
+			rig r;
+			r.items.order = { fake_hwnd(1), fake_hwnd(2), fake_hwnd(3) };
+
+			r.inj->query_round();   // nothing seen yet: everything is overdue
+			CHECK(t, (r.items.queried == std::vector<HWND>{ fake_hwnd(1), fake_hwnd(2), fake_hwnd(3) }));
+
+			r.items.queried.clear();
+			r.inj->query_round();   // nothing changed, nothing overdue
+			CHECK(t, r.items.queried.empty());
+
+			r.inj->changed(fake_hwnd(3));
+			r.inj->query_round();
+			CHECK(t, (r.items.queried == std::vector<HWND>{ fake_hwnd(3) }));
+		} },
+		{ "a_slow_noisy_window_is_paced_by_its_cost", [](test::context& t) {
+			rig r;
+			const HWND slow = fake_hwnd(1);
+			r.items.order = { slow };
+			r.items.snaps[slow] = explorer_like(slow);
+			r.items.delay = std::chrono::milliseconds(30);
+
+			r.inj->query_round();
+			r.inj->changed(slow);
+			r.items.queried.clear();
+			r.inj->query_round();   // changed again at once, but its last query took 30ms
+			CHECK(t, r.items.queried.empty());
+
+			Sleep(30 * window_item_injection::cost_factor + 20);
+			r.inj->query_round();   // still marked as changed, and now its turn has come
+			CHECK(t, r.items.queried.size() == 1);
+		} },
+		{ "badges_follow_a_moved_window_without_a_new_query", [](test::context& t) {
+			rig r;
+			const HWND w = fake_hwnd(1);
+			r.items.order = { w };
+			r.items.snaps[w] = explorer_like(w);
+			r.stack.windows = { { w, { 100, 100, 1300, 900 }, true } };
+
+			r.inj->store(r.inj->query_round());
+			r.inj->follow();
+			CHECK(t, r.layer->shown() && r.layer->last_groups.size() == 1);
+			CHECK(t, r.layer->last_owner == nullptr);
+			const float before = r.layer->last_groups[0].badges[0].x;
+
+			r.stack.windows[0].frame = { 300, 100, 1500, 900 };   // dragged 200px right
+			r.inj->follow();
+			CHECK(t, std::abs(r.layer->last_groups[0].badges[0].x - (before + 200)) < 0.01f);
+			CHECK(t, r.items.queried.size() == 1);
+		} },
+		{ "a_resize_keeps_badges_by_their_edges_and_requeries_first", [](test::context& t) {
+			rig r;
+			const HWND front = fake_hwnd(1), w = fake_hwnd(2);
+			r.items.order = { front, w };
+			r.items.snaps[front] = explorer_like(front);
+			r.items.snaps[w] = explorer_like(w);
+			r.stack.windows = { { w, { 100, 100, 1300, 900 }, true } };
+
+			r.inj->store(r.inj->query_round());
+			r.inj->follow();
+			const float close_from_right = 1300 - r.layer->last_groups[0].badges[0].x;
+
+			r.stack.windows[0].frame = { 0, 0, 2560, 1528 };   // maximized
+			r.inj->follow();
+			CHECK(t, r.layer->shown());
+			CHECK(t, std::abs((2560 - r.layer->last_groups[0].badges[0].x) - close_from_right) < 0.01f);
+
+			r.items.queried.clear();
+			r.inj->query_round();
+			CHECK(t, (r.items.queried == std::vector<HWND>{ w }));   // the resized one, without waiting its turn
+		} },
+		{ "covered_parts_are_clipped_away", [](test::context& t) {
+			rig r;
+			const HWND w = fake_hwnd(1), cover = fake_hwnd(2);
+			r.items.order = { w };
+			r.items.snaps[w] = explorer_like(w);
+			r.inj->store(r.inj->query_round());
+
+			r.stack.windows = { { cover, { 0, 0, 700, 1600 }, true }, { w, { 100, 100, 1300, 900 }, true } };
+			r.inj->follow();
+			CHECK(t, r.layer->last_groups.size() == 1);
+			for (const RECT& v : r.layer->last_groups[0].visible) CHECK(t, v.left >= 700);
+
+			r.stack.windows[0].frame = { 0, 0, 2560, 1600 };   // fully covered
+			r.inj->follow();
+			CHECK(t, !r.layer->shown());
+		} },
+		{ "minimized_or_gone_windows_drop_out", [](test::context& t) {
+			rig r;
+			const HWND a = fake_hwnd(1), b = fake_hwnd(2);
+			r.items.order = { a, b };
+			r.items.snaps[a] = explorer_like(a);
+			r.items.snaps[b] = explorer_like(b);
+			r.stack.windows = { { a, { 100, 100, 1300, 900 }, false }, { b, { 100, 100, 1300, 900 }, true } };
+
+			r.inj->store(r.inj->query_round());
+			r.inj->follow();
+			CHECK(t, r.layer->last_groups.size() == 2);
+
+			r.stack.windows.pop_back();   // b minimized: not on screen
+			r.inj->follow();
+			CHECK(t, r.layer->last_groups.size() == 1);
+
+			r.items.order = { a };        // b closed: its layout goes
+			r.inj->store(r.inj->query_round());
+			r.stack.windows.push_back({ b, { 100, 100, 1300, 900 }, true });
+			r.inj->follow();
+			CHECK(t, r.layer->last_groups.size() == 1);
+		} },
+		{ "a_query_taken_mid_move_is_dropped_and_retried", [](test::context& t) {
+			rig r;
+			const HWND w = fake_hwnd(1);
+			r.items.order = { w };
+			r.items.snaps[w] = explorer_like(w);
+			r.items.snaps[w].settled = false;
+
+			CHECK(t, r.inj->query_round().updated.empty());
+			r.items.queried.clear();
+			r.items.snaps[w].settled = true;
+			CHECK(t, r.inj->query_round().updated.size() == 1);   // retried right away, not after a second
+		} },
+		{ "numbers_follow_the_element", [](test::context& t) {
+			rig r;
+			const HWND w = fake_hwnd(1);
+			r.items.order = { w };
+			r.items.snaps[w] = explorer_like(w);
+			r.stack.windows = { { w, { 100, 100, 1300, 900 }, true } };
+
+			r.inj->store(r.inj->query_round());
+			r.inj->follow();
+			const int row = r.layer->last_groups[0].badges[1].number;
+
+			std::swap(r.items.snaps[w].items[0], r.items.snaps[w].items[1]);
+			r.inj->changed(w);
+			r.inj->store(r.inj->query_round());
+			r.inj->follow();
+			CHECK(t, r.layer->last_groups[0].badges[0].number == row);
+		} },
+		{ "change_events_reach_the_injection", [](test::context& t) {
+			rig r;
+			const HWND w = fake_hwnd(1);
+			r.items.order = { w };
+			r.items.snaps[w] = explorer_like(w);
+			r.stack.windows = { { w, { 100, 100, 1300, 900 }, true } };
+
+			r.inj->on();
+			CHECK(t, static_cast<bool>(r.changes.changed));
+			CHECK(t, pump_until([&] { return r.layer->shown(); }));
+			r.inj->off();
+			CHECK(t, !r.layer->shown());
+			CHECK(t, !r.changes.changed);
+			CHECK(t, r.items.disconnects == 1);
 		} },
 	} };
 }

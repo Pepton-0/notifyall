@@ -17,6 +17,7 @@ public:
 	overlay& operator=(const overlay&) = delete;
 
 	void show(HWND owner, const RECT& area, const std::vector<badge>& badges) override;
+	void show_groups(HWND owner, const RECT& area, const std::vector<badge_group>& groups) override;
 	void hide() override;
 	bool shown() const override { return shown_; }
 
@@ -39,7 +40,7 @@ private:
 	bool broken = false;   // stop retrying after the GPU setup failed
 
 	RECT area_{};
-	std::vector<badge> badges_;
+	std::vector<badge_group> groups_;
 	bool painted = false;
 	bool shown_ = false;
 };

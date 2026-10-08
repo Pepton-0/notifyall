@@ -15,7 +15,7 @@ void tray_area_injection::on()
 	refresher.start(refresh_interval,
 		[this] { return compute(); },
 		[this](const overlay_frame& frame) { apply(frame); },
-		[this] { items.disconnect(); });
+		[this] { items.disconnect(); }, L"tray area");
 	lib::log("tray area injection: on");
 }
 

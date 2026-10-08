@@ -15,7 +15,7 @@ void desktop_injection::on()
 	refresher.start(refresh_interval,
 		[this] { return compute(); },
 		[this](const overlay_frame& frame) { apply(frame); },
-		[this] { desk.disconnect(); });
+		[this] { desk.disconnect(); }, L"desktop");
 	lib::log("desktop injection: on");
 }
 

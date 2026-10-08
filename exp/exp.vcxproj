@@ -140,6 +140,10 @@
 
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="..\core\app_windows.cpp" />
+    <ClCompile Include="..\core\window_items.cpp" />
+    <ClCompile Include="window_items_exp.cpp" />
+    <ClCompile Include="start_items.cpp" />
     <ClCompile Include="..\core\overlay.cpp" />
     <ClCompile Include="taskbar_items.cpp" />
     <ClCompile Include="badge.cpp" />
@@ -148,6 +152,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="badge.h" />
+    <ClInclude Include="window_items_exp.h" />
+    <ClInclude Include="start_items.h" />
     <ClInclude Include="taskbar_items.h" />
     <ClInclude Include="desktop_icons.h" />
     <ClInclude Include="taskbar_windows.h" />

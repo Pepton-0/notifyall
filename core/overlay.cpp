@@ -32,6 +32,11 @@ overlay::~overlay()
 
 void overlay::show(HWND owner, const RECT& area, const std::vector<badge>& badges)
 {
+	show_groups(owner, area, { badge_group{ { area }, badges } });
+}
+
+void overlay::show_groups(HWND owner, const RECT& area, const std::vector<badge_group>& groups)
+{
 	if (!ensure_ready(owner)) return;
 
 	const bool moved = !same_rect(area, area_);
@@ -44,8 +49,8 @@ void overlay::show(HWND owner, const RECT& area, const std::vector<badge>& badge
 	// Touch the z-order as little as possible: explorer is rearranging the same windows.
 	if (moved || !shown_ || !above_owner()) place();
 
-	if (!painted || badges != badges_) {
-		badges_ = badges;
+	if (!painted || groups != groups_) {
+		groups_ = groups;
 		painted = paint();
 	}
 
@@ -65,15 +70,20 @@ void overlay::hide()
 
 void overlay::place()
 {
-	// An owned window always stays above its owner, so this lands right above it: at the bottom
-	// for the desktop, among the topmost windows for the taskbar. NOOWNERZORDER leaves the owner alone.
-	const bool topmost_owner = GetWindowLongPtrW(owner_, GWL_EXSTYLE) & WS_EX_TOPMOST;
-	SetWindowPos(hwnd, topmost_owner ? HWND_TOPMOST : HWND_BOTTOM, area_.left, area_.top,
-		static_cast<int>(width_of(area_)), static_cast<int>(height_of(area_)), SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+	// Slot in right above the owner, i.e. below whatever sits directly above it; a topmost owner (the taskbar)
+	// rises with its owned windows anyway. NOOWNERZORDER leaves the owner alone.
+	const bool topmost_owner = !owner_ || (GetWindowLongPtrW(owner_, GWL_EXSTYLE) & WS_EX_TOPMOST);
+	const HWND above = GetWindow(owner_, GW_HWNDPREV);
+	UINT flags = SWP_NOACTIVATE | SWP_NOOWNERZORDER;
+	HWND after = topmost_owner ? HWND_TOPMOST : (above ? above : HWND_TOP);
+	if (!topmost_owner && above == hwnd) flags |= SWP_NOZORDER;   // already in place
+	SetWindowPos(hwnd, after, area_.left, area_.top,
+		static_cast<int>(width_of(area_)), static_cast<int>(height_of(area_)), flags);
 }
 
 bool overlay::above_owner() const
 {
+	if (!owner_) return true;   // free-standing: windows above it are clipped out instead
 	constexpr int search_limit = 256;
 	int steps = 0;
 	for (HWND w = GetWindow(owner_, GW_HWNDPREV); w && steps < search_limit; w = GetWindow(w, GW_HWNDPREV), ++steps)
@@ -147,16 +157,25 @@ bool overlay::paint()
 		ctx.CreateSolidColorBrush(badge_red, red.GetAddressOf());
 		ctx.CreateSolidColorBrush(digit_white, white.GetAddressOf());
 
-		for (const badge& b : badges_) {
-			const float x = b.x - static_cast<float>(area_.left);
-			const float y = b.y - static_cast<float>(area_.top);
-			const float r = b.diameter / 2;
+		const float ox = static_cast<float>(area_.left);
+		const float oy = static_cast<float>(area_.top);
+		for (const badge_group& group : groups_) {
+			for (const RECT& v : group.visible) {
+				const D2D1_RECT_F clip = D2D1::RectF(v.left - ox, v.top - oy, v.right - ox, v.bottom - oy);
+				ctx.PushAxisAlignedClip(clip, D2D1_ANTIALIAS_MODE_ALIASED);
+				for (const badge& b : group.badges) {
+					const float x = b.x - ox;
+					const float y = b.y - oy;
+					const float r = b.diameter / 2;
+					if (x + r < clip.left || x - r > clip.right || y + r < clip.top || y - r > clip.bottom) continue;
 
-			ctx.FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), r, r), red.Get());
-
-			const std::wstring digit = std::to_wstring(b.number);
-			ctx.DrawText(digit.c_str(), static_cast<UINT32>(digit.size()), text_format(b.diameter),
-				D2D1::RectF(x - r, y - r, x + r, y + r), white.Get());
+					ctx.FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), r, r), red.Get());
+					const std::wstring digit = std::to_wstring(b.number);
+					ctx.DrawText(digit.c_str(), static_cast<UINT32>(digit.size()), text_format(b.diameter),
+						D2D1::RectF(x - r, y - r, x + r, y + r), white.Get());
+				}
+				ctx.PopAxisAlignedClip();
+			}
 		}
 	});
 }

@@ -1,44 +1,11 @@
 #include "taskbar.h"
 
-#include <dwmapi.h>
-
+#include "app_windows.h"
 #include "logger.h"
-
-#pragma comment(lib, "dwmapi.lib")
-
-namespace {
-
-	// Same rules the taskbar uses, judged from window styles and DWM state only.
-	bool has_taskbar_button(HWND hwnd)
-	{
-		if (!IsWindowVisible(hwnd)) return false;
-
-		const LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-		if (ex & WS_EX_TOOLWINDOW) return false;
-
-		// Owned windows get a button only with WS_EX_APPWINDOW.
-		if (GetWindow(hwnd, GW_OWNER) && !(ex & WS_EX_APPWINDOW)) return false;
-
-		// Cloaked: on another virtual desktop, or a suspended UWP app.
-		DWORD cloaked = 0;
-		if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) && cloaked) return false;
-
-		return GetWindowTextLengthW(hwnd) > 0;
-	}
-
-	BOOL CALLBACK collect(HWND hwnd, LPARAM lp)
-	{
-		if (has_taskbar_button(hwnd)) reinterpret_cast<std::vector<HWND>*>(lp)->push_back(hwnd);
-		return TRUE;
-	}
-
-}
 
 std::vector<HWND> taskbar::windows()
 {
-	std::vector<HWND> out;
-	EnumWindows(&collect, reinterpret_cast<LPARAM>(&out));
-	return out;
+	return app_windows::list();
 }
 
 int taskbar::overlay_size()

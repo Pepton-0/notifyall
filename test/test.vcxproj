@@ -136,6 +136,14 @@
 
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="..\core\window_changes.cpp" />
+    <ClCompile Include="..\core\occlusion.cpp" />
+    <ClCompile Include="..\core\window_stack.cpp" />
+    <ClCompile Include="..\core\window_item_injection.cpp" />
+    <ClCompile Include="..\core\window_items.cpp" />
+    <ClCompile Include="..\core\window_icon_injection.cpp" />
+    <ClCompile Include="..\core\window_icons.cpp" />
+    <ClCompile Include="..\core\app_windows.cpp" />
     <ClCompile Include="..\core\tray_area_injection.cpp" />
     <ClCompile Include="..\core\taskbar_items.cpp" />
     <ClCompile Include="..\core\system_cursors.cpp" />

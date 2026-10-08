@@ -69,15 +69,16 @@ namespace lib {
 		poller& operator=(const poller&) = delete;
 
 		// fetch runs on the worker (COM initialized as MTA); apply runs on this thread, which must pump messages.
-		// cleanup runs on the worker as it ends, to release what fetch created there.
+		// cleanup runs on the worker as it ends; name shows up in debuggers and profilers.
 		void start(std::chrono::milliseconds interval, std::function<T()> fetch, std::function<void(T)> apply,
-		           std::function<void()> cleanup = {})
+		           std::function<void()> cleanup = {}, const wchar_t* name = L"notifyall poller")
 		{
 			stop();
 			deliver = std::move(apply);
 			open();
 
-			worker = std::jthread([this, interval, fetch = std::move(fetch), cleanup = std::move(cleanup)](std::stop_token stop) {
+			worker = std::jthread([this, interval, name, fetch = std::move(fetch), cleanup = std::move(cleanup)](std::stop_token stop) {
+				SetThreadDescription(GetCurrentThread(), name);
 				const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 				while (!stop.stop_requested()) {
 					T result = fetch();

@@ -15,7 +15,7 @@
 // by the taskbar, so it rises with the taskbar when Start or a flyout opens.
 class tray_area_injection final : public i_injection {
 public:
-	static constexpr std::chrono::milliseconds refresh_interval{ 300 };
+	static constexpr std::chrono::milliseconds refresh_interval{ 1000 };   // the tray rarely rearranges
 
 	tray_area_injection(i_taskbar_items& items, std::unique_ptr<i_overlay> layer);
 

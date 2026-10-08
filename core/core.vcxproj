@@ -132,6 +132,14 @@
 
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="window_changes.cpp" />
+    <ClCompile Include="occlusion.cpp" />
+    <ClCompile Include="window_stack.cpp" />
+    <ClCompile Include="window_item_injection.cpp" />
+    <ClCompile Include="window_items.cpp" />
+    <ClCompile Include="window_icon_injection.cpp" />
+    <ClCompile Include="window_icons.cpp" />
+    <ClCompile Include="app_windows.cpp" />
     <ClCompile Include="tray_area_injection.cpp" />
     <ClCompile Include="taskbar_items.cpp" />
     <ClCompile Include="system_cursors.cpp" />
@@ -147,6 +155,18 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="composition.h" />
+    <ClInclude Include="window_changes.h" />
+    <ClInclude Include="i_window_changes.h" />
+    <ClInclude Include="occlusion.h" />
+    <ClInclude Include="window_stack.h" />
+    <ClInclude Include="i_window_stack.h" />
+    <ClInclude Include="window_item_injection.h" />
+    <ClInclude Include="window_items.h" />
+    <ClInclude Include="i_window_items.h" />
+    <ClInclude Include="window_icon_injection.h" />
+    <ClInclude Include="window_icons.h" />
+    <ClInclude Include="i_window_icons.h" />
+    <ClInclude Include="app_windows.h" />
     <ClInclude Include="tray_area_injection.h" />
     <ClInclude Include="taskbar_items.h" />
     <ClInclude Include="i_taskbar_items.h" />

@@ -14,7 +14,10 @@
 #include "badge.h"
 #include "desktop_icons.h"
 #include "overlay.h"
+#include "start_items.h"
 #include "taskbar_items.h"
+#include "window_items.h"
+#include "window_items_exp.h"
 #include "logger.h"
 #include "strconv.h"
 #include "taskbar_windows.h"
@@ -144,6 +147,115 @@ namespace {
 		return 0;
 	}
 
+	// Badges every Start menu item through an overlay owned by the Start window.
+	int start_overlay(int seconds)
+	{
+		CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+		const HWND start = start_items::window();
+		if (!start) { out(L"Start window not found\n"); return 1; }
+
+		dx::device_source gpu;
+		overlay layer(gpu);
+		const float scale = GetDpiForWindow(start) / 96.0f;
+
+		const auto until = GetTickCount64() + static_cast<ULONGLONG>(seconds) * 1000;
+		std::size_t most = 0;
+		while (GetTickCount64() < until) {
+			if (!start_items::open(start)) {
+				layer.hide();
+			}
+			else {
+				RECT bounds{};
+				GetWindowRect(start, &bounds);
+				std::vector<badge> badges;
+				int n = 0;
+				for (const RECT& r : start_items::read(start)) {
+					const float d = std::round(18.0f * scale);
+					badges.push_back({ r.right - d * 0.8f, r.top + d * 0.8f, d, n++ % 9 + 1 });
+				}
+				most = std::max(most, badges.size());
+				layer.show(start, bounds, badges);
+			}
+
+			MSG msg{};
+			const auto next = GetTickCount64() + 300;
+			while (GetTickCount64() < next) {
+				while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
+				Sleep(10);
+			}
+		}
+		out(std::format(L"most badges at once: {}\n", most));
+		return 0;
+	}
+
+	// Badges every item of whatever window is in front, through an overlay owned by that window.
+	int window_overlay(int seconds)
+	{
+		CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+		dx::device_source gpu;
+		overlay layer(gpu);
+
+		const auto until = GetTickCount64() + static_cast<ULONGLONG>(seconds) * 1000;
+		std::size_t most = 0;
+		ULONGLONG slowest = 0;
+		while (GetTickCount64() < until) {
+			const HWND front = GetForegroundWindow();
+			if (!front || IsIconic(front)) {
+				layer.hide();
+			}
+			else {
+				const auto began = GetTickCount64();
+				const auto items = window_items_exp::read(front, 400);
+				slowest = std::max(slowest, GetTickCount64() - began);
+
+				RECT bounds{};
+				GetWindowRect(front, &bounds);
+				const float scale = GetDpiForWindow(front) / 96.0f;
+				std::vector<badge> badges;
+				int n = 0;
+				for (const RECT& r : items) {
+					const float d = std::round(std::min(14.0f * scale, (r.bottom - r.top) * 0.7f));
+					badges.push_back({ r.right - d * 0.6f, r.top + d * 0.6f, d, n++ % 9 + 1 });
+				}
+				most = std::max(most, badges.size());
+				if (badges.empty()) layer.hide();
+				else                layer.show(front, bounds, badges);
+			}
+
+			MSG msg{};
+			const auto next = GetTickCount64() + 400;
+			while (GetTickCount64() < next) {
+				while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
+				Sleep(10);
+			}
+		}
+		out(std::format(L"most badges at once: {}, slowest query: {} ms\n", most, slowest));
+		return 0;
+	}
+
+	// Times core's window_items::query on one window.
+	int bench_query(HWND target, int runs)
+	{
+		CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+		window_items items;
+		ULONGLONG total = 0, worst = 0;
+		std::size_t count = 0;
+		for (int i = 0; i < runs; ++i) {
+			LARGE_INTEGER f{}, a{}, b{};
+			QueryPerformanceFrequency(&f);
+			QueryPerformanceCounter(&a);
+			const auto snap = items.query(target);
+			QueryPerformanceCounter(&b);
+			const ULONGLONG ms = static_cast<ULONGLONG>((b.QuadPart - a.QuadPart) * 1000 / f.QuadPart);
+			total += ms;
+			worst = std::max(worst, ms);
+			count = snap ? snap->items.size() : 0;
+		}
+		out(std::format(L"query: avg {} ms, worst {} ms, {} items\n", total / runs, worst, count));
+		items.disconnect();
+		return 0;
+	}
+
 	int clear()
 	{
 		taskbar_list tb;
@@ -175,6 +287,9 @@ int wmain(int argc, wchar_t** argv)
 	if (has(L"--apply"))   return apply(std::stoi(value(L"--apply", L"5")), has(L"--keep"));
 	if (has(L"--clear"))   return clear();
 	if (has(L"--desktop")) return desktop_icons();
+	if (has(L"--bench-query")) return bench_query(reinterpret_cast<HWND>(std::stoull(value(L"--bench-query", L"0"))), std::stoi(value(L"--runs", L"10")));
+	if (has(L"--window-overlay")) return window_overlay(std::stoi(value(L"--window-overlay", L"10")));
+	if (has(L"--start-overlay")) return start_overlay(std::stoi(value(L"--start-overlay", L"10")));
 	if (has(L"--taskbar-overlay")) return taskbar_overlay(std::stoi(value(L"--taskbar-overlay", L"10")));
 
 	out(L"usage:\n"

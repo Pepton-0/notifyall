@@ -21,6 +21,9 @@ test::suite notifyinjector_suite();
 test::suite taskbar_injection_suite();
 test::suite cursor_injection_suite();
 test::suite tray_area_injection_suite();
+test::suite window_icon_injection_suite();
+test::suite window_item_injection_suite();
+test::suite occlusion_suite();
 test::suite desktop_injection_suite();
 test::suite tray_icon_suite();
 test::suite composition_suite();
@@ -39,6 +42,9 @@ namespace {
 			taskbar_injection_suite(),
 			cursor_injection_suite(),
 			tray_area_injection_suite(),
+			window_icon_injection_suite(),
+			window_item_injection_suite(),
+			occlusion_suite(),
 			desktop_injection_suite(),
 			tray_icon_suite(),
 			composition_suite(),
