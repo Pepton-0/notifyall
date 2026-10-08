@@ -132,13 +132,18 @@
 
   <ItemGroup>
     <ClCompile Include="i18n.cpp" />
+    <ClCompile Include="timer.cpp" />
+    <ClCompile Include="dx.cpp" />
     <ClCompile Include="logger.cpp" />
     <ClCompile Include="strconv.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="evt.h" />
+    <ClInclude Include="timer.h" />
+    <ClInclude Include="dx.h" />
     <ClInclude Include="i18n.h" />
     <ClInclude Include="logger.h" />
+    <ClInclude Include="poller.h" />
     <ClInclude Include="strconv.h" />
     <ClInclude Include="third_party\boost\di.hpp" />
   </ItemGroup>

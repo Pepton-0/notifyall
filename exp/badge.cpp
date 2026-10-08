@@ -132,7 +132,7 @@ namespace {
 
 }
 
-namespace badge {
+namespace badge_icon {
 
 	HICON make(int number, int size)
 	{

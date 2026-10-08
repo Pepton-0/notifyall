@@ -136,6 +136,16 @@
 
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="..\core\tray_area_injection.cpp" />
+    <ClCompile Include="..\core\taskbar_items.cpp" />
+    <ClCompile Include="..\core\system_cursors.cpp" />
+    <ClCompile Include="..\core\desktop_injection.cpp" />
+    <ClCompile Include="..\core\desktop.cpp" />
+    <ClCompile Include="..\core\cursor_injection.cpp" />
+    <ClCompile Include="..\core\badge_art.cpp" />
+    <ClCompile Include="..\core\taskbar_injection.cpp" />
+    <ClCompile Include="..\core\taskbar.cpp" />
+    <ClCompile Include="..\core\overlay.cpp" />
     <ClCompile Include="lib_tests.cpp" />
     <ClCompile Include="core_tests.cpp" />
     <ClCompile Include="..\core\notifyinjector.cpp" />

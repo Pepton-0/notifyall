@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <windows.h>
 
-namespace badge {
+namespace badge_icon {
 
 	// The caller owns the icon and must DestroyIcon it.
 	HICON make(int number, int size);

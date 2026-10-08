@@ -2,13 +2,16 @@
 #include <regex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "evt.h"
 #include "framework.h"
 #include "i18n.h"
 #include "logger.h"
+#include "poller.h"
 #include "strconv.h"
+#include "timer.h"
 
 test::suite logger_suite()
 {
@@ -143,6 +146,60 @@ test::suite i18n_suite()
 			CHECK(t, i18n::current() == "en");
 			CHECK(t, i18n::get("a") == "A");
 			CHECK(t, i18n::get("only_ja") == "only_ja");
+		} },
+	} };
+}
+
+test::suite timer_suite()
+{
+	return { "timer", {
+		{ "ticks_while_pumping", [](test::context& t) {
+			lib::timer timer;
+			int ticks = 0;
+			timer.start(std::chrono::milliseconds(10), [&] { ++ticks; });
+			CHECK(t, timer.running());
+
+			const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+			MSG msg{};
+			while (ticks < 2 && std::chrono::steady_clock::now() < until) {
+				while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
+				Sleep(1);
+			}
+			CHECK(t, ticks >= 2);
+
+			timer.stop();
+			CHECK(t, !timer.running());
+		} },
+	} };
+}
+
+test::suite poller_suite()
+{
+	return { "poller", {
+		{ "fetches_on_worker_and_applies_here", [](test::context& t) {
+			const auto here = std::this_thread::get_id();
+			std::thread::id fetched_on, applied_on, cleaned_on;
+			int applied = 0;
+
+			lib::poller<int> p;
+			p.start(std::chrono::milliseconds(5),
+				[&] { fetched_on = std::this_thread::get_id(); return 42; },
+				[&](int v) { applied_on = std::this_thread::get_id(); if (v == 42) ++applied; },
+				[&] { cleaned_on = std::this_thread::get_id(); });
+
+			const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+			MSG msg{};
+			while (applied < 2 && std::chrono::steady_clock::now() < until) {
+				while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
+				Sleep(1);
+			}
+			p.stop();
+
+			CHECK(t, applied >= 2);
+			CHECK(t, applied_on == here);
+			CHECK(t, fetched_on != here);
+			CHECK(t, cleaned_on == fetched_on);
+			CHECK(t, !p.running());
 		} },
 	} };
 }

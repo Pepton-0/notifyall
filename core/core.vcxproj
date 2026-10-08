@@ -132,11 +132,37 @@
 
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="tray_area_injection.cpp" />
+    <ClCompile Include="taskbar_items.cpp" />
+    <ClCompile Include="system_cursors.cpp" />
+    <ClCompile Include="desktop_injection.cpp" />
+    <ClCompile Include="desktop.cpp" />
+    <ClCompile Include="cursor_injection.cpp" />
+    <ClCompile Include="badge_art.cpp" />
+    <ClCompile Include="taskbar_injection.cpp" />
+    <ClCompile Include="taskbar.cpp" />
+    <ClCompile Include="overlay.cpp" />
     <ClCompile Include="notifyinjector.cpp" />
     <ClCompile Include="tray_icon.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="composition.h" />
+    <ClInclude Include="tray_area_injection.h" />
+    <ClInclude Include="taskbar_items.h" />
+    <ClInclude Include="i_taskbar_items.h" />
+    <ClInclude Include="system_cursors.h" />
+    <ClInclude Include="i_desktop.h" />
+    <ClInclude Include="i_cursors.h" />
+    <ClInclude Include="desktop_injection.h" />
+    <ClInclude Include="desktop.h" />
+    <ClInclude Include="cursor_injection.h" />
+    <ClInclude Include="badge_art.h" />
+    <ClInclude Include="taskbar_injection.h" />
+    <ClInclude Include="taskbar.h" />
+    <ClInclude Include="overlay.h" />
+    <ClInclude Include="i_taskbar.h" />
+    <ClInclude Include="i_overlay.h" />
+    <ClInclude Include="i_injection.h" />
     <ClInclude Include="i_notifyinjector.h" />
     <ClInclude Include="i_tray_icon.h" />
     <ClInclude Include="notifyinjector.h" />

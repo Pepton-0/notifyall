@@ -5,12 +5,16 @@
 #include <shobjidl.h>
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <random>
 #include <string>
 #include <vector>
 
 #include "badge.h"
+#include "desktop_icons.h"
+#include "overlay.h"
+#include "taskbar_items.h"
 #include "logger.h"
 #include "strconv.h"
 #include "taskbar_windows.h"
@@ -55,7 +59,7 @@ namespace {
 		// Overlays are drawn at small icon size: 16px at 100% scaling.
 		const int size = GetSystemMetrics(SM_CXSMICON);
 		std::vector<HICON> icons;
-		for (int n = 1; n <= 9; ++n) icons.push_back(badge::make(n, size));
+		for (int n = 1; n <= 9; ++n) icons.push_back(badge_icon::make(n, size));
 		out(std::format(L"badge size: {}px\n", size));
 
 		std::mt19937 rng{ std::random_device{}() };
@@ -81,6 +85,62 @@ namespace {
 
 		// The taskbar keeps its own copies.
 		for (const HICON i : icons) DestroyIcon(i);
+		return 0;
+	}
+
+	int desktop_icons()
+	{
+		CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+		const auto d = desktop::read();
+		out(std::format(L"list view={} icon size={} spacing={}x{} icons={}\n",
+			reinterpret_cast<std::uintptr_t>(d.list_view), d.icon_size, d.spacing.x, d.spacing.y, d.icons.size()));
+		for (const auto& i : d.icons)
+			out(std::format(L"  [{},{} - {},{}]\n", i.rect.left, i.rect.top, i.rect.right, i.rect.bottom));
+		CoUninitialize();
+		return 0;
+	}
+
+	// Badges every taskbar item through an overlay owned by the taskbar, pumping messages for a while.
+	int taskbar_overlay(int seconds)
+	{
+		CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+		const HWND tray = FindWindowW(L"Shell_TrayWnd", nullptr);
+		if (!tray) return 1;
+
+		RECT bounds{};
+		GetWindowRect(tray, &bounds);
+		const float scale = GetDpiForWindow(tray) / 96.0f;
+
+		std::mt19937 rng{ std::random_device{}() };
+		std::vector<int> numbers;
+		dx::device_source gpu;
+		overlay layer(gpu);
+
+		const auto until = GetTickCount64() + static_cast<ULONGLONG>(seconds) * 1000;
+		std::size_t shown = 0;
+		while (GetTickCount64() < until) {
+			const auto items = taskbar_items::read(tray);
+			while (numbers.size() < items.size()) numbers.push_back(std::uniform_int_distribution<int>(1, 9)(rng));
+
+			std::vector<badge> badges;
+			for (std::size_t i = 0; i < items.size(); ++i) {
+				const RECT& r = items[i].rect;
+				const float icon = (items[i].right_side ? 16.0f : 24.0f) * scale;
+				const float d = std::round(icon * 0.6f);
+				const float cx = (r.left + r.right) / 2.0f, cy = (r.top + r.bottom) / 2.0f;
+				badges.push_back({ cx + icon / 2 - d / 4, cy - icon / 2 + d / 4, d, numbers[i] });
+			}
+			layer.show(tray, bounds, badges);
+			shown = badges.size();
+
+			MSG msg{};
+			const auto next = GetTickCount64() + 300;
+			while (GetTickCount64() < next) {
+				while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
+				Sleep(10);
+			}
+		}
+		out(std::format(L"badged {} taskbar items\n", shown));
 		return 0;
 	}
 
@@ -110,15 +170,19 @@ int wmain(int argc, wchar_t** argv)
 	if (has(L"--list"))    return list();
 	if (has(L"--preview")) {
 		const int size = std::stoi(value(L"--size", L"64"));
-		return badge::save_preview(value(L"--preview", L"badges.bmp"), size) ? 0 : 1;
+		return badge_icon::save_preview(value(L"--preview", L"badges.bmp"), size) ? 0 : 1;
 	}
 	if (has(L"--apply"))   return apply(std::stoi(value(L"--apply", L"5")), has(L"--keep"));
 	if (has(L"--clear"))   return clear();
+	if (has(L"--desktop")) return desktop_icons();
+	if (has(L"--taskbar-overlay")) return taskbar_overlay(std::stoi(value(L"--taskbar-overlay", L"10")));
 
 	out(L"usage:\n"
 		L"  exp.exe --list                          list windows that own a taskbar button\n"
 		L"  exp.exe --preview <file.bmp> [--size N] write badges 1..9 side by side\n"
 		L"  exp.exe --apply <seconds> [--keep]      badge every button, then remove unless --keep\n"
-		L"  exp.exe --clear                         remove badges from every button\n");
+		L"  exp.exe --clear                         remove badges from every button\n"
+		L"  exp.exe --desktop                       list desktop icon rectangles\n"
+		L"  exp.exe --taskbar-overlay <seconds>    badge every taskbar item with an overlay owned by the taskbar\n");
 	return 2;
 }

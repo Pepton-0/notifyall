@@ -15,7 +15,13 @@
 test::suite logger_suite();
 test::suite evt_suite();
 test::suite i18n_suite();
+test::suite timer_suite();
+test::suite poller_suite();
 test::suite notifyinjector_suite();
+test::suite taskbar_injection_suite();
+test::suite cursor_injection_suite();
+test::suite tray_area_injection_suite();
+test::suite desktop_injection_suite();
 test::suite tray_icon_suite();
 test::suite composition_suite();
 
@@ -27,7 +33,13 @@ namespace {
 			logger_suite(),
 			evt_suite(),
 			i18n_suite(),
+			timer_suite(),
+			poller_suite(),
 			notifyinjector_suite(),
+			taskbar_injection_suite(),
+			cursor_injection_suite(),
+			tray_area_injection_suite(),
+			desktop_injection_suite(),
 			tray_icon_suite(),
 			composition_suite(),
 		};
