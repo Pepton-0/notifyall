@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-
 #include <windows.h>
 
 enum class icon_kind { big, little };
@@ -27,4 +26,14 @@ public:
 
 	// Edge length in pixels at the window's dpi.
 	virtual int size(HWND window, icon_kind kind) = 0;
+};
+
+class window_icons final : public i_window_icons {
+public:
+	std::vector<HWND> windows() override;
+	bool elevated(HWND window) override;
+	HICON get(HWND window, icon_kind kind) override;
+	HICON shown(HWND window, icon_kind kind) override;
+	bool set(HWND window, icon_kind kind, HICON icon) override;
+	int size(HWND window, icon_kind kind) override;
 };

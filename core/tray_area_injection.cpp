@@ -2,34 +2,51 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 
 #include "logger.h"
 
-tray_area_injection::tray_area_injection(i_taskbar_items& items, std::unique_ptr<i_overlay> layer)
-	: items(items), layer(std::move(layer))
+namespace {
+
+	bool is_taskbar(HWND window)
+	{
+		wchar_t cls[32]{};
+		return GetClassNameW(window, cls, 32) > 0 && std::wstring_view(cls) == L"Shell_TrayWnd";
+	}
+
+}
+
+tray_area_injection::tray_area_injection(i_taskbar_items& items, i_window_changes& changes, std::unique_ptr<i_overlay> layer)
+	: items(items), changes(changes), layer(std::move(layer))
 {
 }
 
 void tray_area_injection::on()
 {
-	refresher.start(refresh_interval,
+	changeSub = changes.on_change().connect([this](HWND w, window_change) { if (is_taskbar(w)) taskbar_changed(); });
+	changes.start();
+	refresher.start(tick,
 		[this] { return compute(); },
-		[this](const overlay_frame& frame) { apply(frame); },
+		[this](const std::optional<overlay_frame>& frame) { apply(frame); },
 		[this] { items.disconnect(); }, L"tray area");
 	lib::log("tray area injection: on");
 }
 
 void tray_area_injection::off()
 {
+	changes.stop();
+	changeSub.reset();
 	refresher.stop();
 	layer->hide();
 	lib::log("tray area injection: off", true);
 }
 
-overlay_frame tray_area_injection::compute()
+std::optional<overlay_frame> tray_area_injection::compute(bool force)
 {
+	if (!force && !pacer.due()) return std::nullopt;
+
 	const auto snap = items.snapshot();
-	if (!snap) return {};
+	if (!snap) return overlay_frame{};
 
 	overlay_frame frame{ snap->taskbar, snap->bounds };
 	for (const auto& item : snap->items) {
@@ -39,10 +56,11 @@ overlay_frame tray_area_injection::compute()
 	return frame;
 }
 
-void tray_area_injection::apply(const overlay_frame& frame)
+void tray_area_injection::apply(const std::optional<overlay_frame>& frame)
 {
-	if (frame.badges.empty()) layer->hide();
-	else                      layer->show(frame.owner, frame.area, frame.badges);
+	if (!frame) return;   // not due: the last picture still holds
+	if (frame->badges.empty()) layer->hide();
+	else                       layer->show(frame->owner, frame->area, frame->badges);
 }
 
 badge tray_area_injection::place(const RECT& item, UINT dpi, int number, bool clock)

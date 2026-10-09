@@ -6,7 +6,7 @@
 #include <unordered_map>
 
 #include "i_injection.h"
-#include "i_taskbar.h"
+#include "taskbar.h"
 #include "timer.h"
 
 // Badges the taskbar button of every running window. Pinned apps that aren't running have no window to badge.

@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "i_window_stack.h"
+#include "window_stack.h"
 
 namespace occlusion {
 

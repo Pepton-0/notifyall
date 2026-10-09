@@ -17,7 +17,7 @@ namespace {
 		return GetLayeredWindowAttributes(hwnd, nullptr, &alpha, &flags) && (flags & LWA_ALPHA) && alpha == 0;
 	}
 
-	RECT frame_of(HWND hwnd)
+	RECT drawn_frame(HWND hwnd)
 	{
 		RECT r{};
 		if (FAILED(DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &r, sizeof(r)))) GetWindowRect(hwnd, &r);
@@ -32,7 +32,7 @@ namespace {
 		GetWindowThreadProcessId(hwnd, &pid);
 		if (pid == GetCurrentProcessId()) return TRUE;
 
-		stacked_window w{ hwnd, frame_of(hwnd), !see_through(hwnd) };
+		stacked_window w{ hwnd, drawn_frame(hwnd), !see_through(hwnd) };
 		if (w.frame.right > w.frame.left && w.frame.bottom > w.frame.top)
 			reinterpret_cast<std::vector<stacked_window>*>(lp)->push_back(w);
 		return TRUE;
@@ -46,6 +46,12 @@ std::vector<stacked_window> window_stack::front_to_back()
 	std::vector<stacked_window> out;
 	EnumWindows(&collect, reinterpret_cast<LPARAM>(&out));
 	return out;
+}
+
+std::optional<RECT> window_stack::frame_of(HWND window)
+{
+	if (!IsWindowVisible(window) || IsIconic(window)) return std::nullopt;
+	return drawn_frame(window);
 }
 
 RECT window_stack::screen()

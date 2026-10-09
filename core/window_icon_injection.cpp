@@ -7,7 +7,8 @@
 #include "badge_art.h"
 #include "logger.h"
 
-window_icon_injection::window_icon_injection(i_window_icons& icons) : icons(icons)
+window_icon_injection::window_icon_injection(i_window_icons& icons, i_window_changes& changes)
+	: icons(icons), changes(changes)
 {
 }
 
@@ -24,13 +25,23 @@ void window_icon_injection::on()
 {
 	if (refresher.running()) return;
 	refresh();
-	refresher.start(refresh_interval, [this] { refresh(); });
+
+	// Windows opening, closing or coming forward are worth a prompt look; inner changes are not.
+	changeSub = changes.on_change().connect([this](HWND, window_change kind) {
+		if (kind == window_change::stack) pacer.poke();
+	});
+	changes.start();
+	refresher.start(tick, [this] { if (pacer.due()) refresh(); });
 	lib::log(std::format("window icon injection: on ({} windows, {} elevated skipped)", windows.size(), skipped.size()));
 }
 
 void window_icon_injection::off()
 {
 	refresher.stop();
+	if (changeSub.active()) {
+		changes.stop();
+		changeSub.reset();
+	}
 	for (auto& [window, e] : windows) {
 		restore(window, icon_kind::big, e.big);
 		restore(window, icon_kind::little, e.little);

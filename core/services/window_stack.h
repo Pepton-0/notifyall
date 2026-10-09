@@ -1,7 +1,7 @@
 #pragma once
 
+#include <optional>
 #include <vector>
-
 #include <windows.h>
 
 // An on-screen top-level window, as far as stacking is concerned.
@@ -19,6 +19,16 @@ public:
 	// Visible, not minimized, not cloaked, and not notifyall's own; frontmost first.
 	virtual std::vector<stacked_window> front_to_back() = 0;
 
+	// Just one window's frame, while it is still shown and not minimized.
+	virtual std::optional<RECT> frame_of(HWND window) = 0;
+
 	// The whole virtual screen, all monitors included.
 	virtual RECT screen() = 0;
+};
+
+class window_stack final : public i_window_stack {
+public:
+	std::vector<stacked_window> front_to_back() override;
+	std::optional<RECT> frame_of(HWND window) override;
+	RECT screen() override;
 };

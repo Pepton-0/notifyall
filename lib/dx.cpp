@@ -4,14 +4,11 @@
 #include <format>
 
 #include <d3d11.h>
-#include <dcomp.h>
-#include <dxgi1_2.h>
-#include <wrl/client.h>
+#include <dxgi.h>
 
 #include "logger.h"
 
 #pragma comment(lib, "d3d11.lib")
-#pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d2d1.lib")
 #pragma comment(lib, "dwrite.lib")
 #pragma comment(lib, "dcomp.lib")
@@ -37,8 +34,11 @@ namespace {
 		const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
 		for (const D3D_DRIVER_TYPE type : { D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP }) {
 			ComPtr<ID3D11Device> d3d;
-			// BGRA_SUPPORT is required for Direct2D interop.
-			const HRESULT hr = D3D11CreateDevice(nullptr, type, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+			// BGRA_SUPPORT is required for Direct2D. Everything runs on one thread and redraws rarely,
+			// so the driver needs neither locking nor worker threads of its own.
+			constexpr UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_SINGLETHREADED
+				| D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS;
+			const HRESULT hr = D3D11CreateDevice(nullptr, type, nullptr, flags,
 				levels, ARRAYSIZE(levels), D3D11_SDK_VERSION, d3d.GetAddressOf(), nullptr, nullptr);
 			if (SUCCEEDED(hr)) {
 				lib::log(std::format("dx: device created ({})", type == D3D_DRIVER_TYPE_HARDWARE ? "hardware" : "warp"), true);
@@ -56,7 +56,6 @@ namespace dx {
 	struct device::impl {
 		ComPtr<ID3D11Device> d3d;
 		ComPtr<IDXGIDevice> dxgi;
-		ComPtr<IDXGIFactory2> factory;
 		ComPtr<ID2D1DeviceContext> d2d;
 		ComPtr<IDWriteFactory> dwrite;
 		ComPtr<IDCompositionDevice> dcomp;
@@ -68,11 +67,7 @@ namespace dx {
 
 		p->d3d = create_d3d();
 		if (!p->d3d) return nullptr;
-
-		ComPtr<IDXGIAdapter> adapter;
 		if (failed(p->d3d.As(&p->dxgi), "IDXGIDevice")) return nullptr;
-		if (failed(p->dxgi->GetAdapter(adapter.GetAddressOf()), "GetAdapter")) return nullptr;
-		if (failed(adapter->GetParent(IID_PPV_ARGS(p->factory.GetAddressOf())), "IDXGIFactory2")) return nullptr;
 
 		ComPtr<ID2D1Factory1> d2dFactory;
 		ComPtr<ID2D1Device> d2dDevice;
@@ -93,6 +88,42 @@ namespace dx {
 
 	ID2D1DeviceContext& device::d2d() const { return *p->d2d.Get(); }
 	IDWriteFactory& device::dwrite() const { return *p->dwrite.Get(); }
+	IDCompositionDevice& device::composition() const { return *p->dcomp.Get(); }
+
+	ComPtr<IDCompositionSurface> device::paint_surface(UINT width, UINT height,
+		const std::function<void(ID2D1DeviceContext&, D2D1_POINT_2F)>& paint)
+	{
+		width = std::max(1u, width);
+		height = std::max(1u, height);
+		ComPtr<IDCompositionSurface> surface;
+		if (failed(p->dcomp->CreateSurface(width, height, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_ALPHA_MODE_PREMULTIPLIED,
+			surface.GetAddressOf()), "CreateSurface")) return nullptr;
+
+		POINT at{};
+		ComPtr<IDXGISurface> texture;
+		if (failed(surface->BeginDraw(nullptr, IID_PPV_ARGS(texture.GetAddressOf()), &at), "BeginDraw")) return nullptr;
+
+		const D2D1_BITMAP_PROPERTIES1 props = D2D1::BitmapProperties1(
+			D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+			D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+		ID2D1DeviceContext& ctx = *p->d2d.Get();
+		ComPtr<ID2D1Bitmap1> target;
+		bool drawn = !failed(ctx.CreateBitmapFromDxgiSurface(texture.Get(), &props, target.GetAddressOf()), "CreateBitmapFromDxgiSurface");
+		if (drawn) {
+			// The rest of a shared texture belongs to other surfaces: stay inside ours.
+			const D2D1_POINT_2F origin = D2D1::Point2F(static_cast<float>(at.x), static_cast<float>(at.y));
+			ctx.SetTarget(target.Get());
+			ctx.BeginDraw();
+			ctx.PushAxisAlignedClip(D2D1::RectF(origin.x, origin.y, origin.x + width, origin.y + height), D2D1_ANTIALIAS_MODE_ALIASED);
+			ctx.Clear(D2D1::ColorF(0, 0, 0, 0));
+			paint(ctx, origin);
+			ctx.PopAxisAlignedClip();
+			drawn = !failed(ctx.EndDraw(), "EndDraw");
+			ctx.SetTarget(nullptr);
+		}
+		const bool ended = !failed(surface->EndDraw(), "EndDraw (surface)");
+		return drawn && ended ? surface : nullptr;
+	}
 
 	std::shared_ptr<device> device_source::get()
 	{
@@ -105,31 +136,18 @@ namespace dx {
 
 	struct layer::impl {
 		device::impl& dev;
-		ComPtr<IDXGISwapChain1> chain;
 		ComPtr<IDCompositionTarget> target;
-		ComPtr<IDCompositionVisual> visual;
+		ComPtr<IDCompositionVisual> root;
 	};
 
-	std::unique_ptr<layer> layer::create(device& dev, HWND hwnd, UINT width, UINT height)
+	std::unique_ptr<layer> layer::create(device& dev, HWND hwnd)
 	{
 		auto p = std::unique_ptr<impl>(new impl{ *dev.p });
 		auto& d = *dev.p;
 
-		DXGI_SWAP_CHAIN_DESC1 sd{};
-		sd.Width = std::max(1u, width);
-		sd.Height = std::max(1u, height);
-		sd.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-		sd.BufferCount = 2;
-		sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		sd.SampleDesc.Count = 1;
-		sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-		sd.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
-
-		if (failed(d.factory->CreateSwapChainForComposition(d.d3d.Get(), &sd, nullptr, p->chain.GetAddressOf()), "CreateSwapChainForComposition")) return nullptr;
 		if (failed(d.dcomp->CreateTargetForHwnd(hwnd, TRUE, p->target.GetAddressOf()), "CreateTargetForHwnd")) return nullptr;
-		if (failed(d.dcomp->CreateVisual(p->visual.GetAddressOf()), "CreateVisual")) return nullptr;
-		if (failed(p->visual->SetContent(p->chain.Get()), "SetContent")) return nullptr;
-		if (failed(p->target->SetRoot(p->visual.Get()), "SetRoot")) return nullptr;
+		if (failed(d.dcomp->CreateVisual(p->root.GetAddressOf()), "CreateVisual")) return nullptr;
+		if (failed(p->target->SetRoot(p->root.Get()), "SetRoot")) return nullptr;
 		if (failed(d.dcomp->Commit(), "Commit")) return nullptr;
 
 		return std::unique_ptr<layer>(new layer(std::move(p)));
@@ -138,34 +156,11 @@ namespace dx {
 	layer::layer(std::unique_ptr<impl> p) : p(std::move(p)) {}
 	layer::~layer() = default;
 
-	bool layer::resize(UINT width, UINT height)
+	IDCompositionVisual& layer::root() const { return *p->root.Get(); }
+
+	bool layer::commit()
 	{
-		return !failed(p->chain->ResizeBuffers(0, std::max(1u, width), std::max(1u, height), DXGI_FORMAT_UNKNOWN, 0), "ResizeBuffers");
-	}
-
-	bool layer::draw(const std::function<void(ID2D1DeviceContext&)>& paint)
-	{
-		ID2D1DeviceContext& ctx = *p->dev.d2d.Get();
-
-		// Flip model rotates buffers, so bind the current back buffer on every draw.
-		ComPtr<IDXGISurface> surface;
-		if (failed(p->chain->GetBuffer(0, IID_PPV_ARGS(surface.GetAddressOf())), "GetBuffer")) return false;
-
-		const D2D1_BITMAP_PROPERTIES1 props = D2D1::BitmapProperties1(
-			D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-			D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-		ComPtr<ID2D1Bitmap1> target;
-		if (failed(ctx.CreateBitmapFromDxgiSurface(surface.Get(), &props, target.GetAddressOf()), "CreateBitmapFromDxgiSurface")) return false;
-
-		ctx.SetTarget(target.Get());
-		ctx.BeginDraw();
-		ctx.Clear(D2D1::ColorF(0, 0, 0, 0));
-		paint(ctx);
-		const HRESULT drawn = ctx.EndDraw();
-		ctx.SetTarget(nullptr);
-		if (failed(drawn, "EndDraw")) return false;
-
-		return !failed(p->chain->Present(1, 0), "Present");
+		return !failed(p->dev.dcomp->Commit(), "Commit");
 	}
 
 }

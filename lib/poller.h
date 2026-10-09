@@ -81,15 +81,18 @@ namespace lib {
 				SetThreadDescription(GetCurrentThread(), name);
 				const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 				while (!stop.stop_requested()) {
+					nextWait.reset();
 					T result = fetch();
 					{
 						std::lock_guard lock(m);
-						latest = std::move(result);
+						if (latest && fold) fold(*latest, std::move(result));
+						else                latest = std::move(result);
 					}
 					notify();
 
 					std::unique_lock lock(m);
-					wake.wait_for(lock, stop, interval, [] { return false; });
+					wake.wait_for(lock, stop, nextWait.value_or(interval), [this] { return poked; });
+					poked = false;
 				}
 				if (cleanup) cleanup();
 				if (SUCCEEDED(com)) CoUninitialize();
@@ -108,6 +111,23 @@ namespace lib {
 
 		bool running() const { return worker.joinable(); }
 
+		// Starts the next round now rather than after the wait. Any thread may call it.
+		void poke()
+		{
+			{
+				std::lock_guard lock(m);
+				poked = true;
+			}
+			wake.notify_all();
+		}
+
+		// For fetch to call: wait this long before the next round instead of the usual interval.
+		void wait_next(std::chrono::milliseconds wait) { nextWait = wait; }
+
+		// A result this thread hasn't taken yet is normally replaced by the next one. Results that carry
+		// only what changed must not get lost that way: fold merges the fresh one into the unread one.
+		void fold_with(std::function<void(T& unread, T fresh)> merge) { fold = std::move(merge); }
+
 	private:
 		void take() override
 		{
@@ -120,9 +140,12 @@ namespace lib {
 		}
 
 		std::function<void(T)> deliver;
+		std::function<void(T&, T)> fold;   // set before start(), used by the worker
 		std::mutex m;
 		std::condition_variable_any wake;
-		std::optional<T> latest;   // only the newest result matters; older ones are dropped
+		std::optional<T> latest;   // waiting for this thread to take it
+		bool poked = false;        // under m
+		std::optional<std::chrono::milliseconds> nextWait;   // worker only
 		std::jthread worker;
 	};
 

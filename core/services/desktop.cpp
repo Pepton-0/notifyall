@@ -73,6 +73,12 @@ std::optional<desktop_snapshot> desktop::snapshot()
 	return s;
 }
 
+HWND desktop::host()
+{
+	const HWND list = IsWindow(listView) ? listView : find_icon_list_view();
+	return list ? GetAncestor(list, GA_ROOT) : nullptr;
+}
+
 void desktop::disconnect()
 {
 	view.Reset();

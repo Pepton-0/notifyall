@@ -2,34 +2,58 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 
 #include "logger.h"
+#include "occlusion.h"
 
-desktop_injection::desktop_injection(i_desktop& desk, std::unique_ptr<i_overlay> layer)
-	: desk(desk), layer(std::move(layer))
+namespace {
+
+	bool is_desktop(HWND window)
+	{
+		wchar_t cls[16]{};
+		const std::wstring_view name(cls, static_cast<std::size_t>(GetClassNameW(window, cls, 16)));
+		return name == L"Progman" || name == L"WorkerW";
+	}
+
+}
+
+desktop_injection::desktop_injection(i_desktop& desk, i_window_stack& stack, i_window_changes& changes,
+                                     std::unique_ptr<i_overlay> layer)
+	: desk(desk), stack(stack), changes(changes), layer(std::move(layer))
 {
 }
 
 void desktop_injection::on()
 {
-	refresher.start(refresh_interval,
+	changeSub = changes.on_change().connect([this](HWND w, window_change) { if (is_desktop(w)) desktop_changed(); });
+	changes.start();
+	refresher.start(tick,
 		[this] { return compute(); },
-		[this](const overlay_frame& frame) { apply(frame); },
+		[this](const std::optional<overlay_frame>& frame) { apply(frame); },
 		[this] { desk.disconnect(); }, L"desktop");
 	lib::log("desktop injection: on");
 }
 
 void desktop_injection::off()
 {
+	changes.stop();
+	changeSub.reset();
 	refresher.stop();
 	layer->hide();
 	lib::log("desktop injection: off", true);
 }
 
-overlay_frame desktop_injection::compute()
+std::optional<overlay_frame> desktop_injection::compute(bool force)
 {
+	if (!force) {
+		if (!pacer.due()) return std::nullopt;
+		// Under other windows the badges can't be seen, and the last positions still hold when it shows again.
+		if (const HWND host = desk.host(); host && !visible(host)) return std::nullopt;
+	}
+
 	const auto snap = desk.snapshot();
-	if (!snap) return {};
+	if (!snap) return overlay_frame{};
 
 	overlay_frame frame{ snap->host, snap->bounds };
 	frame.badges.reserve(snap->icons.size());
@@ -37,10 +61,16 @@ overlay_frame desktop_injection::compute()
 	return frame;
 }
 
-void desktop_injection::apply(const overlay_frame& frame)
+void desktop_injection::apply(const std::optional<overlay_frame>& frame)
 {
-	if (frame.badges.empty()) layer->hide();
-	else                      layer->show(frame.owner, frame.area, frame.badges);
+	if (!frame) return;   // not due, or covered: the last picture still holds
+	if (frame->badges.empty()) layer->hide();
+	else                       layer->show(frame->owner, frame->area, frame->badges);
+}
+
+bool desktop_injection::visible(HWND host)
+{
+	return occlusion::visible_parts(stack.front_to_back()).contains(host);
 }
 
 badge desktop_injection::place(const RECT& icon, int number)

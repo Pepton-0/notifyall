@@ -5,17 +5,21 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "change_pacer.h"
 #include "i_injection.h"
-#include "i_window_icons.h"
+#include "window_changes.h"
+#include "window_icons.h"
 #include "timer.h"
 
 // Swaps every app window's icon (title bar, Alt+Tab, Task View) for a badged copy, and puts the original back on off().
 // Elevated apps are left alone.
 class window_icon_injection final : public i_injection {
 public:
-	static constexpr std::chrono::milliseconds refresh_interval{ 1000 };
+	static constexpr std::chrono::milliseconds tick{ 250 };          // how often to check whether a look is due
+	static constexpr std::chrono::milliseconds busy_period{ 1000 };  // look every tick this long after windows change
+	static constexpr std::chrono::milliseconds fallback{ 3000 };     // apps switch their own icons without telling
 
-	explicit window_icon_injection(i_window_icons& icons);
+	window_icon_injection(i_window_icons& icons, i_window_changes& changes);
 	~window_icon_injection() override;
 
 	void on() override;
@@ -45,6 +49,9 @@ private:
 	void restore(HWND window, icon_kind kind, slot& s);
 
 	i_window_icons& icons;
+	i_window_changes& changes;
+	evt::subscription<HWND, window_change> changeSub;
+	lib::change_pacer pacer{ busy_period, fallback };
 	lib::timer refresher;
 
 	std::unordered_map<HWND, entry> windows;

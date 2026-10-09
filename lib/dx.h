@@ -7,7 +7,9 @@
 
 #include <windows.h>
 #include <d2d1_1.h>
+#include <dcomp.h>
 #include <dwrite.h>
+#include <wrl/client.h>
 
 namespace dx {
 
@@ -22,6 +24,12 @@ namespace dx {
 
 		ID2D1DeviceContext& d2d() const;
 		IDWriteFactory& dwrite() const;
+		IDCompositionDevice& composition() const;
+
+		// A width x height picture that any number of visuals can show. paint gets the top-left to draw at,
+		// as composition may hand out a part of a bigger texture. Returns nullptr on failure.
+		Microsoft::WRL::ComPtr<IDCompositionSurface> paint_surface(UINT width, UINT height,
+			const std::function<void(ID2D1DeviceContext&, D2D1_POINT_2F)>& paint);
 
 	private:
 		struct impl;
@@ -41,20 +49,19 @@ namespace dx {
 		bool failed = false;
 	};
 
-	// A see-through surface covering a window's client area, blended with premultiplied alpha.
-	// The window must have been created with WS_EX_NOREDIRECTIONBITMAP.
+	// The tree of visuals a window shows. The window must have been created with WS_EX_NOREDIRECTIONBITMAP.
 	class layer {
 	public:
-		static std::unique_ptr<layer> create(device& dev, HWND hwnd, UINT width, UINT height);
+		static std::unique_ptr<layer> create(device& dev, HWND hwnd);
 		~layer();
 
 		layer(const layer&) = delete;
 		layer& operator=(const layer&) = delete;
 
-		bool resize(UINT width, UINT height);
+		IDCompositionVisual& root() const;
 
-		// Clears to fully transparent, runs paint, then presents.
-		bool draw(const std::function<void(ID2D1DeviceContext&)>& paint);
+		// Shows every change made to the tree since the last commit, all at once.
+		bool commit();
 
 	private:
 		struct impl;

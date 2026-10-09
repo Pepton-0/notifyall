@@ -13,10 +13,15 @@
 
 #include "badge.h"
 #include "desktop_icons.h"
+#include "drag_window.h"
+#include "event_census.h"
 #include "overlay.h"
+#include "query_variants.h"
+#include "scene_test.h"
 #include "start_items.h"
 #include "taskbar_items.h"
 #include "window_items.h"
+#include "window_stack.h"
 #include "window_items_exp.h"
 #include "logger.h"
 #include "strconv.h"
@@ -256,6 +261,51 @@ namespace {
 		return 0;
 	}
 
+	// Creates the GPU objects an overlay uses and then only pumps messages, to see what idling costs.
+	int idle_device(int seconds, bool with_layer, int size)
+	{
+		dx::device_source gpu;
+		overlay layer(gpu);
+		if (with_layer) {
+			const RECT area{ 0, 0, size, size * 10 / 16 };
+			layer.show(nullptr, area, { badge{ 32, 32, 24, 1 } });
+		}
+		else {
+			gpu.get();
+		}
+
+		const auto until = GetTickCount64() + static_cast<ULONGLONG>(seconds) * 1000;
+		MSG msg{};
+		while (GetTickCount64() < until) {
+			while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
+			MsgWaitForMultipleObjects(0, nullptr, FALSE, 100, QS_ALLINPUT);
+		}
+		return 0;
+	}
+
+	// Runs only the window stack query at the follow rate, to see what it costs on its own.
+	int stack_loop(int seconds, bool with_layer)
+	{
+		dx::device_source gpu;
+		overlay layer(gpu);
+		if (with_layer) {
+			const RECT area{ 0, 0, 64, 64 };
+			layer.show(nullptr, area, { badge{ 32, 32, 24, 1 } });
+		}
+
+		window_stack stack;
+		std::size_t windows = 0;
+		const auto until = GetTickCount64() + static_cast<ULONGLONG>(seconds) * 1000;
+		MSG msg{};
+		while (GetTickCount64() < until) {
+			windows = stack.front_to_back().size();
+			while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
+			MsgWaitForMultipleObjects(0, nullptr, FALSE, 25, QS_ALLINPUT);
+		}
+		out(std::format(L"windows on screen: {}\n", windows));
+		return 0;
+	}
+
 	int clear()
 	{
 		taskbar_list tb;
@@ -287,6 +337,17 @@ int wmain(int argc, wchar_t** argv)
 	if (has(L"--apply"))   return apply(std::stoi(value(L"--apply", L"5")), has(L"--keep"));
 	if (has(L"--clear"))   return clear();
 	if (has(L"--desktop")) return desktop_icons();
+	if (has(L"--watch-scroll")) return query_variants::watch_scroll(reinterpret_cast<HWND>(std::stoull(value(L"--watch-scroll", L"0"))), std::stoi(value(L"--runs", L"100")), std::stoi(value(L"--gap", L"0")));
+	if (has(L"--watch-query")) return query_variants::watch(reinterpret_cast<HWND>(std::stoull(value(L"--watch-query", L"0"))), std::stoi(value(L"--runs", L"100")), std::stoi(value(L"--gap", L"0")), has(L"--hit"));
+	if (has(L"--query-variants")) return query_variants::run(reinterpret_cast<HWND>(std::stoull(value(L"--query-variants", L"0"))), std::stoi(value(L"--runs", L"10")));
+	if (has(L"--scene-test")) return scene_test::run(value(L"--scene-test", L""));
+	if (has(L"--focus-window")) return drag_window::take_focus(reinterpret_cast<HWND>(std::stoull(value(L"--focus-window", L"0")))) ? 0 : 1;
+	if (has(L"--drag-window")) return drag_window::run(std::stoi(value(L"--drag-window", L"20")), std::stoi(value(L"--buttons", L"100")),
+		has(L"--still") ? drag_window::motion::still : has(L"--scroll") ? drag_window::motion::scroll : drag_window::motion::move,
+		std::stoi(value(L"--hold", L"0")), has(L"--focus"));
+	if (has(L"--event-census")) return event_census::run(std::stoi(value(L"--event-census", L"20")), std::stoul(value(L"--pid", L"0")));
+	if (has(L"--stack-loop")) return stack_loop(std::stoi(value(L"--stack-loop", L"20")), has(L"--with-layer"));
+	if (has(L"--idle-device")) return idle_device(std::stoi(value(L"--idle-device", L"20")), has(L"--with-layer"), std::stoi(value(L"--size", L"64")));
 	if (has(L"--bench-query")) return bench_query(reinterpret_cast<HWND>(std::stoull(value(L"--bench-query", L"0"))), std::stoi(value(L"--runs", L"10")));
 	if (has(L"--window-overlay")) return window_overlay(std::stoi(value(L"--window-overlay", L"10")));
 	if (has(L"--start-overlay")) return start_overlay(std::stoi(value(L"--start-overlay", L"10")));
@@ -298,6 +359,11 @@ int wmain(int argc, wchar_t** argv)
 		L"  exp.exe --apply <seconds> [--keep]      badge every button, then remove unless --keep\n"
 		L"  exp.exe --clear                         remove badges from every button\n"
 		L"  exp.exe --desktop                       list desktop icon rectangles\n"
-		L"  exp.exe --taskbar-overlay <seconds>    badge every taskbar item with an overlay owned by the taskbar\n");
+		L"  exp.exe --taskbar-overlay <seconds>    badge every taskbar item with an overlay owned by the taskbar\n"
+		L"  exp.exe --event-census <seconds>       count the WinEvents notifyall listens to, by kind and process\n"
+		L"  exp.exe --drag-window <seconds> [--buttons N] [--hold S] [--still | --scroll] [--focus]\n"
+		L"                                          a topmost window of buttons that circles, sits or scrolls\n"
+		L"  exp.exe --query-variants <hwnd> [--runs N] time ways of asking UI Automation for a window's items\n"
+		L"  exp.exe --scene-test [<shot>]           check badge drawing against the screen; saves <shot>-N.bmp\n");
 	return 2;
 }

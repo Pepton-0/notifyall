@@ -3,7 +3,7 @@
 #include <array>
 #include <random>
 
-#include "i_cursors.h"
+#include "system_cursors.h"
 #include "i_injection.h"
 
 // Replaces the static system cursors with copies carrying a badge at their bottom-right.

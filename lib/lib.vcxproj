@@ -140,6 +140,7 @@
   <ItemGroup>
     <ClInclude Include="evt.h" />
     <ClInclude Include="timer.h" />
+    <ClInclude Include="change_pacer.h" />
     <ClInclude Include="dx.h" />
     <ClInclude Include="i18n.h" />
     <ClInclude Include="logger.h" />

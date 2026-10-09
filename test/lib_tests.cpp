@@ -5,6 +5,7 @@
 #include <thread>
 #include <vector>
 
+#include "change_pacer.h"
 #include "evt.h"
 #include "framework.h"
 #include "i18n.h"
@@ -200,6 +201,75 @@ test::suite poller_suite()
 			CHECK(t, fetched_on != here);
 			CHECK(t, cleaned_on == fetched_on);
 			CHECK(t, !p.running());
+		} },
+		{ "a_poke_starts_the_next_round_early", [](test::context& t) {
+			std::atomic<int> fetched = 0;
+			lib::poller<int> p;
+			p.start(std::chrono::milliseconds(10000), [&] { return ++fetched; }, [](int) {});
+
+			const auto waited = [&](int count) {
+				const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+				while (fetched < count && std::chrono::steady_clock::now() < until) Sleep(1);
+				return fetched >= count;
+			};
+			CHECK(t, waited(1));   // the first round runs at once
+			p.poke();
+			CHECK(t, waited(2));   // and the next long before the ten seconds are up
+			p.stop();
+		} },
+		{ "fetch_can_shorten_the_next_wait", [](test::context& t) {
+			std::atomic<int> fetched = 0;
+			lib::poller<int> p;
+			p.start(std::chrono::milliseconds(10000), [&] {
+				p.wait_next(std::chrono::milliseconds(1));
+				return ++fetched;
+			}, [](int) {});
+
+			const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+			while (fetched < 3 && std::chrono::steady_clock::now() < until) Sleep(1);
+			p.stop();
+			CHECK(t, fetched >= 3);
+		} },
+		{ "unread_results_are_folded_not_dropped", [](test::context& t) {
+			std::atomic<int> fetched = 0;
+			int applied = 0;
+
+			lib::poller<int> p;
+			p.fold_with([](int& unread, int fresh) { unread += fresh; });
+			p.start(std::chrono::milliseconds(5), [&] { return fetched++ < 10 ? 1 : 0; }, [&](int v) { applied += v; });
+
+			Sleep(400);   // nothing taken meanwhile: ten ones pile up unread
+			CHECK(t, fetched > 10);
+			MSG msg{};
+			const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+			while (applied < 10 && std::chrono::steady_clock::now() < until) {
+				while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
+				Sleep(1);
+			}
+			p.stop();
+			CHECK(t, applied == 10);
+		} },
+	} };
+}
+
+test::suite change_pacer_suite()
+{
+	using namespace std::chrono_literals;
+	return { "change_pacer", {
+		{ "busy_after_a_poke_quiet_otherwise", [](test::context& t) {
+			lib::change_pacer pacer(60ms, 150ms);
+			CHECK(t, pacer.due());     // the first run
+			CHECK(t, !pacer.due());    // nothing since
+
+			pacer.poke();
+			CHECK(t, pacer.due());
+			CHECK(t, pacer.due());     // still busy
+			Sleep(80);
+			CHECK(t, !pacer.due());    // busy period over, fallback not reached
+
+			Sleep(160);
+			CHECK(t, pacer.due());     // fallback
+			CHECK(t, !pacer.due());
 		} },
 	} };
 }

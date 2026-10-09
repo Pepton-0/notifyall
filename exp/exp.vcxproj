@@ -56,7 +56,7 @@
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="PropertySheets">
-    <Import Project="..\lib\lib.props" />
+    <Import Project="..\core\core.props" />
   </ImportGroup>
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
@@ -83,7 +83,6 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -99,7 +98,6 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -113,7 +111,6 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -129,7 +126,6 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -140,15 +136,16 @@
 
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="..\core\app_windows.cpp" />
-    <ClCompile Include="..\core\window_items.cpp" />
     <ClCompile Include="window_items_exp.cpp" />
     <ClCompile Include="start_items.cpp" />
-    <ClCompile Include="..\core\overlay.cpp" />
     <ClCompile Include="taskbar_items.cpp" />
     <ClCompile Include="badge.cpp" />
     <ClCompile Include="desktop_icons.cpp" />
     <ClCompile Include="taskbar_windows.cpp" />
+    <ClCompile Include="event_census.cpp" />
+    <ClCompile Include="drag_window.cpp" />
+    <ClCompile Include="scene_test.cpp" />
+    <ClCompile Include="query_variants.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="badge.h" />
@@ -157,8 +154,15 @@
     <ClInclude Include="taskbar_items.h" />
     <ClInclude Include="desktop_icons.h" />
     <ClInclude Include="taskbar_windows.h" />
+    <ClInclude Include="event_census.h" />
+    <ClInclude Include="drag_window.h" />
+    <ClInclude Include="scene_test.h" />
+    <ClInclude Include="query_variants.h" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\core\core.vcxproj">
+      <Project>{67f2735b-1315-45a7-b400-07cf71838ea3}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\lib\lib.vcxproj">
       <Project>{b797557f-f530-419c-a761-901f7a7e82f8}</Project>
     </ProjectReference>

@@ -56,7 +56,7 @@
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="PropertySheets">
-    <Import Project="..\lib\lib.props" />
+    <Import Project="..\core\core.props" />
   </ImportGroup>
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
@@ -83,7 +83,6 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -98,7 +97,6 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -111,7 +109,6 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -126,7 +123,6 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -136,33 +132,16 @@
 
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="..\core\window_changes.cpp" />
-    <ClCompile Include="..\core\occlusion.cpp" />
-    <ClCompile Include="..\core\window_stack.cpp" />
-    <ClCompile Include="..\core\window_item_injection.cpp" />
-    <ClCompile Include="..\core\window_items.cpp" />
-    <ClCompile Include="..\core\window_icon_injection.cpp" />
-    <ClCompile Include="..\core\window_icons.cpp" />
-    <ClCompile Include="..\core\app_windows.cpp" />
-    <ClCompile Include="..\core\tray_area_injection.cpp" />
-    <ClCompile Include="..\core\taskbar_items.cpp" />
-    <ClCompile Include="..\core\system_cursors.cpp" />
-    <ClCompile Include="..\core\desktop_injection.cpp" />
-    <ClCompile Include="..\core\desktop.cpp" />
-    <ClCompile Include="..\core\cursor_injection.cpp" />
-    <ClCompile Include="..\core\badge_art.cpp" />
-    <ClCompile Include="..\core\taskbar_injection.cpp" />
-    <ClCompile Include="..\core\taskbar.cpp" />
-    <ClCompile Include="..\core\overlay.cpp" />
     <ClCompile Include="lib_tests.cpp" />
     <ClCompile Include="core_tests.cpp" />
-    <ClCompile Include="..\core\notifyinjector.cpp" />
-    <ClCompile Include="..\core\tray_icon.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\core\core.vcxproj">
+      <Project>{67f2735b-1315-45a7-b400-07cf71838ea3}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\lib\lib.vcxproj">
       <Project>{b797557f-f530-419c-a761-901f7a7e82f8}</Project>
     </ProjectReference>

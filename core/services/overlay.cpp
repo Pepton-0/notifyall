@@ -1,19 +1,13 @@
 #include "overlay.h"
 
-#include <cmath>
+#include <algorithm>
 #include <format>
-#include <string>
 
 #include "logger.h"
-
-using Microsoft::WRL::ComPtr;
 
 namespace {
 
 	constexpr wchar_t class_name[] = L"notifyall.overlay";
-
-	const D2D1_COLOR_F badge_red = D2D1::ColorF(220 / 255.f, 30 / 255.f, 40 / 255.f);
-	const D2D1_COLOR_F digit_white = D2D1::ColorF(D2D1::ColorF::White);
 
 	bool same_rect(const RECT& a, const RECT& b)
 	{
@@ -25,6 +19,7 @@ namespace {
 
 }
 
+
 overlay::~overlay()
 {
 	destroy_window();
@@ -32,7 +27,14 @@ overlay::~overlay()
 
 void overlay::show(HWND owner, const RECT& area, const std::vector<badge>& badges)
 {
-	show_groups(owner, area, { badge_group{ { area }, badges } });
+	badge_group all{ nullptr, { area.left, area.top }, { { 0, 0, area.right - area.left, area.bottom - area.top } } };
+	all.badges.reserve(badges.size());
+	for (badge b : badges) {
+		b.x -= area.left;
+		b.y -= area.top;
+		all.badges.push_back(b);
+	}
+	show_groups(owner, area, { all });
 }
 
 void overlay::show_groups(HWND owner, const RECT& area, const std::vector<badge_group>& groups)
@@ -40,19 +42,11 @@ void overlay::show_groups(HWND owner, const RECT& area, const std::vector<badge_
 	if (!ensure_ready(owner)) return;
 
 	const bool moved = !same_rect(area, area_);
-	if (moved) {
-		area_ = area;
-		layer->resize(width_of(area), height_of(area));
-		painted = false;
-	}
+	area_ = area;
 
 	// Touch the z-order as little as possible: explorer is rearranging the same windows.
-	if (moved || !shown_ || !above_owner()) place();
-
-	if (!painted || groups != groups_) {
-		groups_ = groups;
-		painted = paint();
-	}
+	if (moved || !shown_ || !above_owner() || under_any(groups)) place();
+	if (scene->update(groups, { area.left, area.top })) layer->commit();
 
 	if (!shown_) {
 		ShowWindow(hwnd, SW_SHOWNOACTIVATE);
@@ -65,7 +59,6 @@ void overlay::hide()
 	if (!shown_) return;
 	ShowWindow(hwnd, SW_HIDE);
 	shown_ = false;
-	painted = false;   // composition content isn't guaranteed to survive hiding
 }
 
 void overlay::place()
@@ -91,21 +84,34 @@ bool overlay::above_owner() const
 	return false;
 }
 
+bool overlay::under_any(const std::vector<badge_group>& groups) const
+{
+	// A free-standing layer sits on top of the topmost windows, until a topmost window that has badges
+	// itself comes up later and covers it.
+	if (owner_) return false;
+	constexpr int search_limit = 256;
+	int steps = 0;
+	for (HWND w = GetWindow(hwnd, GW_HWNDPREV); w && steps < search_limit; w = GetWindow(w, GW_HWNDPREV), ++steps)
+		if (std::ranges::any_of(groups, [w](const badge_group& g) { return g.key == w; })) return true;
+	return false;
+}
+
 bool overlay::ensure_ready(HWND owner)
 {
-	if (layer && owner == owner_ && IsWindow(hwnd)) return true;
+	if (scene && owner == owner_ && IsWindow(hwnd)) return true;
 	if (broken) return false;
 
 	destroy_window();
 	if (!create_window(owner)) return false;
 
 	if (!device) device = gpu.get();
-	if (device) layer = dx::layer::create(*device, hwnd, 1, 1);
+	if (device) layer = dx::layer::create(*device, hwnd);
 	if (!layer) {
 		broken = true;
 		destroy_window();
 		return false;
 	}
+	scene = std::make_unique<badge_scene>(*device, layer->root());
 
 	lib::log("overlay: ready", true);
 	return true;
@@ -137,60 +143,15 @@ bool overlay::create_window(HWND owner)
 	SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
 	owner_ = owner;
 	area_ = {};
-	painted = false;
 	return true;
 }
 
 void overlay::destroy_window()
 {
+	scene.reset();
 	layer.reset();
 	if (hwnd) DestroyWindow(hwnd);
 	hwnd = nullptr;
 	owner_ = nullptr;
 	shown_ = false;
-}
-
-bool overlay::paint()
-{
-	return layer->draw([&](ID2D1DeviceContext& ctx) {
-		ComPtr<ID2D1SolidColorBrush> red, white;
-		ctx.CreateSolidColorBrush(badge_red, red.GetAddressOf());
-		ctx.CreateSolidColorBrush(digit_white, white.GetAddressOf());
-
-		const float ox = static_cast<float>(area_.left);
-		const float oy = static_cast<float>(area_.top);
-		for (const badge_group& group : groups_) {
-			for (const RECT& v : group.visible) {
-				const D2D1_RECT_F clip = D2D1::RectF(v.left - ox, v.top - oy, v.right - ox, v.bottom - oy);
-				ctx.PushAxisAlignedClip(clip, D2D1_ANTIALIAS_MODE_ALIASED);
-				for (const badge& b : group.badges) {
-					const float x = b.x - ox;
-					const float y = b.y - oy;
-					const float r = b.diameter / 2;
-					if (x + r < clip.left || x - r > clip.right || y + r < clip.top || y - r > clip.bottom) continue;
-
-					ctx.FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), r, r), red.Get());
-					const std::wstring digit = std::to_wstring(b.number);
-					ctx.DrawText(digit.c_str(), static_cast<UINT32>(digit.size()), text_format(b.diameter),
-						D2D1::RectF(x - r, y - r, x + r, y + r), white.Get());
-				}
-				ctx.PopAxisAlignedClip();
-			}
-		}
-	});
-}
-
-IDWriteTextFormat* overlay::text_format(float diameter)
-{
-	const int size = std::max(1, static_cast<int>(std::lround(diameter * 0.72f)));
-	auto& format = formats[size];
-	if (format) return format.Get();
-
-	device->dwrite().CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
-		DWRITE_FONT_STRETCH_NORMAL, static_cast<float>(size), L"en-us", format.GetAddressOf());
-	if (format) {
-		format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-		format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-	}
-	return format.Get();
 }

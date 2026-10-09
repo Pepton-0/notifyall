@@ -6,7 +6,7 @@
 
 namespace {
 
-	bool is_app_window(HWND hwnd)
+	bool is_app_window(HWND hwnd, bool include_cloaked)
 	{
 		if (!IsWindowVisible(hwnd)) return false;
 
@@ -16,13 +16,19 @@ namespace {
 		// Owned windows get a button only with WS_EX_APPWINDOW.
 		if (GetWindow(hwnd, GW_OWNER) && !(ex & WS_EX_APPWINDOW)) return false;
 
-		if (app_windows::cloaked(hwnd)) return false;
+		if (!include_cloaked && app_windows::cloaked(hwnd)) return false;
 		return GetWindowTextLengthW(hwnd) > 0;
 	}
 
+	struct collecting {
+		std::vector<HWND> windows;
+		bool include_cloaked = false;
+	};
+
 	BOOL CALLBACK collect(HWND hwnd, LPARAM lp)
 	{
-		if (is_app_window(hwnd)) reinterpret_cast<std::vector<HWND>*>(lp)->push_back(hwnd);
+		auto& c = *reinterpret_cast<collecting*>(lp);
+		if (is_app_window(hwnd, c.include_cloaked)) c.windows.push_back(hwnd);
 		return TRUE;
 	}
 
@@ -30,11 +36,11 @@ namespace {
 
 namespace app_windows {
 
-	std::vector<HWND> list()
+	std::vector<HWND> list(bool include_cloaked)
 	{
-		std::vector<HWND> out;
-		EnumWindows(&collect, reinterpret_cast<LPARAM>(&out));
-		return out;
+		collecting c{ {}, include_cloaked };
+		EnumWindows(&collect, reinterpret_cast<LPARAM>(&c));
+		return std::move(c.windows);
 	}
 
 	bool elevated(HWND window)

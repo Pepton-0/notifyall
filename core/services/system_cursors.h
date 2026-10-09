@@ -16,3 +16,10 @@ public:
 	// Reloads the user's cursor scheme, undoing every replace.
 	virtual void restore() = 0;
 };
+
+class system_cursors final : public i_cursors {
+public:
+	HCURSOR copy(UINT id) override;
+	bool replace(UINT id, HCURSOR cursor) override;
+	void restore() override;
+};
