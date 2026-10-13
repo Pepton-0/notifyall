@@ -12,7 +12,7 @@ vibe codingなんで中身は適当です。
 
 ### 起動方法
 
-1. releaseからzipをダウンロード、解凍。
+1. [release](https://github.com/Pepton-0/notifyall/releases)からzipをダウンロード、解凍。
 2. 中のnotifyall.exeを起動。
 
 ### 操作方法
