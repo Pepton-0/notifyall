@@ -18,23 +18,30 @@ taskbar_injection::~taskbar_injection()
 void taskbar_injection::on()
 {
 	if (refresher.running()) return;
-	make_icons();
-	refresh();
-	refresher.start(refresh_interval, [this] { refresh(); });
-	lib::log(std::format("taskbar injection: on ({} windows)", numbers.size()));
+	refresher.start(refresh_interval,
+		[this] { refresh(); return true; },
+		[](bool) {},
+		[this] { clear(); bar.disconnect(); }, L"taskbar");
+	lib::log("taskbar injection: on");
 }
 
 void taskbar_injection::off()
 {
-	refresher.stop();
-	for (const auto& [window, number] : numbers) bar.set_overlay(window, nullptr);
-	numbers.clear();
+	if (refresher.running()) refresher.stop();   // the worker clears its overlays as it ends
+	else                     clear();
 	destroy_icons();
 	lib::log("taskbar injection: off", true);
 }
 
+void taskbar_injection::clear()
+{
+	for (const auto& [window, number] : numbers) bar.set_overlay(window, nullptr);
+	numbers.clear();
+}
+
 void taskbar_injection::refresh()
 {
+	if (!icons[0]) make_icons();
 	const auto current = bar.windows();
 	const std::unordered_set<HWND> alive(current.begin(), current.end());
 	std::erase_if(numbers, [&](const auto& entry) { return !alive.contains(entry.first); });

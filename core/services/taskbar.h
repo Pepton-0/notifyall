@@ -19,6 +19,9 @@ public:
 
 	// icon == nullptr removes the overlay. The taskbar keeps its own copy of the icon.
 	virtual bool set_overlay(HWND window, HICON icon) = 0;
+
+	// Releases the COM objects set_overlay() created; call it on the thread that called set_overlay().
+	virtual void disconnect() = 0;
 };
 
 // Needs COM on the calling thread.
@@ -27,6 +30,7 @@ public:
 	std::vector<HWND> windows() override;
 	int overlay_size() override;
 	bool set_overlay(HWND window, HICON icon) override;
+	void disconnect() override;
 
 private:
 	ITaskbarList3* list();

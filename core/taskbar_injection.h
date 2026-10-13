@@ -6,10 +6,11 @@
 #include <unordered_map>
 
 #include "i_injection.h"
+#include "poller.h"
 #include "taskbar.h"
-#include "timer.h"
 
 // Badges the taskbar button of every running window. Pinned apps that aren't running have no window to badge.
+// Explorer is only ever called from a worker: the UI thread shares its input with the taskbar.
 class taskbar_injection final : public i_injection {
 public:
 	static constexpr std::chrono::milliseconds refresh_interval{ 1000 };
@@ -28,9 +29,10 @@ public:
 private:
 	void make_icons();
 	void destroy_icons();
+	void clear();
 
 	i_taskbar& bar;
-	lib::timer refresher;
+	lib::poller<bool> refresher;
 
 	std::array<HICON, 9> icons{};                // badges 1..9
 	std::unordered_map<HWND, int> numbers;     // windows we badged and their number

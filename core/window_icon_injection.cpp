@@ -24,15 +24,17 @@ window_icon_injection::~window_icon_injection()
 void window_icon_injection::on()
 {
 	if (refresher.running()) return;
-	refresh();
 
 	// Windows opening, closing or coming forward are worth a prompt look; inner changes are not.
 	changeSub = changes.on_change().connect([this](HWND, window_change kind) {
 		if (kind == window_change::stack) pacer.poke();
 	});
 	changes.start();
-	refresher.start(tick, [this] { if (pacer.due()) refresh(); });
-	lib::log(std::format("window icon injection: on ({} windows, {} elevated skipped)", windows.size(), skipped.size()));
+	refresher.start(tick,
+		[this] { if (pacer.due()) refresh(); return true; },
+		[](bool) {},
+		[this] { restore_all(); }, L"window icons");
+	lib::log("window icon injection: on");
 }
 
 void window_icon_injection::off()
@@ -42,13 +44,19 @@ void window_icon_injection::off()
 		changes.stop();
 		changeSub.reset();
 	}
+	if (refresher.running()) refresher.stop();   // the worker puts the originals back as it ends
+	else                     restore_all();
+	lib::log("window icon injection: off", true);
+}
+
+void window_icon_injection::restore_all()
+{
 	for (auto& [window, e] : windows) {
 		restore(window, icon_kind::big, e.big);
 		restore(window, icon_kind::little, e.little);
 	}
 	windows.clear();
 	skipped.clear();
-	lib::log("window icon injection: off", true);
 }
 
 void window_icon_injection::refresh()

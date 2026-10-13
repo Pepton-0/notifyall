@@ -20,6 +20,12 @@ bool taskbar::set_overlay(HWND window, HICON icon)
 	return l && SUCCEEDED(l->SetOverlayIcon(window, icon, icon ? L"notification" : nullptr));
 }
 
+void taskbar::disconnect()
+{
+	taskbarList.Reset();
+	unavailable = false;
+}
+
 ITaskbarList3* taskbar::list()
 {
 	if (taskbarList || unavailable) return taskbarList.Get();

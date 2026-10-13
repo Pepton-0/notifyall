@@ -66,9 +66,12 @@ namespace {
 			return true;
 		}
 
+		void disconnect() override { ++disconnects; }
+
 		std::vector<HWND> open;
 		std::map<HWND, HICON> overlays;
 		int calls = 0;
+		int disconnects = 0;
 	};
 
 	// Hands out copies of the arrow and remembers what was put in their place.
@@ -325,16 +328,17 @@ test::suite taskbar_injection_suite()
 
 			taskbar_injection inj(bar);
 			inj.on();
-			CHECK(t, bar.overlays.size() == 2);
-			CHECK(t, inj.badged() == 2);
+			CHECK(t, pump_until([&] { return inj.badged() == 2; }));
 			inj.off();
+			CHECK(t, bar.overlays.empty());   // cleared by the worker as it ended
+			CHECK(t, bar.disconnects == 1);
 		} },
 		{ "badges_new_windows_once", [](test::context& t) {
 			fake_taskbar bar;
 			bar.open = { fake_hwnd(1) };
 
 			taskbar_injection inj(bar);
-			inj.on();
+			inj.refresh();
 			const int after_on = bar.calls;
 			inj.refresh();
 			CHECK(t, bar.calls == after_on);   // already badged, so untouched
@@ -350,7 +354,7 @@ test::suite taskbar_injection_suite()
 			bar.open = { fake_hwnd(1), fake_hwnd(2) };
 
 			taskbar_injection inj(bar);
-			inj.on();
+			inj.refresh();
 			bar.open = { fake_hwnd(2) };
 			inj.refresh();
 			CHECK(t, inj.badged() == 1);
@@ -361,7 +365,7 @@ test::suite taskbar_injection_suite()
 			bar.open = { fake_hwnd(1), fake_hwnd(2) };
 
 			taskbar_injection inj(bar);
-			inj.on();
+			inj.refresh();
 			inj.off();
 			CHECK(t, bar.overlays.empty());
 			CHECK(t, inj.badged() == 0);
